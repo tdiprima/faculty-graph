@@ -1,0 +1,7 @@
+[project]
+name = "faculty-graph"
+version = "0.1.0"
+description = "harvests public faculty publication data"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
