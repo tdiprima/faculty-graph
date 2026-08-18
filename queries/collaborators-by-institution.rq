@@ -3,17 +3,25 @@
 # The drill-down behind collaborating-institutions.rq: once a partner
 # institution stands out, this lists the people and papers behind the count.
 #
-# Set ?partner to the institution's ROR IRI before running.
+# ?home is filled in from INSTITUTION_ROR in your .env at runtime.
+# ?partner is the one value you still supply by hand: it names which outside
+# institution you are drilling into, which is a per-question choice rather
+# than configuration. Replace it with a ROR IRI from
+# collaborating-institutions.rq.
 
-PREFIX fg:     <http://example.org/faculty-graph/>
-PREFIX fgdata: <http://example.org/faculty-graph/data/>
+PREFIX fg:     <{{FG_BASE_URI}}>
+PREFIX fgdata: <{{FGDATA_BASE_URI}}>
 PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
 PREFIX dcterms: <http://purl.org/dc/terms/>
 PREFIX rdfs:   <http://www.w3.org/2000/01/rdf-schema#>
 
 SELECT ?our_author_name ?partner_author_name ?title ?date
 WHERE {
-    VALUES ?home    { <https://ror.org/abc123456> }
+    VALUES ?home {
+        {{INSTITUTION_ROR_VALUES}}
+    }
+
+    # Massachusetts Institute of Technology, as an example. Change this.
     VALUES ?partner { <https://ror.org/042nb2s44> }
 
     ?home_authorship a fg:Authorship ;

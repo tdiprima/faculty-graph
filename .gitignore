@@ -26,5 +26,14 @@ data/output/logs/
 # Copy data/seed/faculty.csv.example to data/seed/faculty.csv and fill it in.
 data/seed/faculty.csv
 
+# Local configuration. Never committed: it names the institution this checkout
+# is pointed at, and is where any API key would go.
+# Copy .env.example to .env and fill it in.
+.env
+
+# Generated output (regenerable)
+data/output/rdf/by-source/
+data/output/queries/
+
 # Other
 faculty-data-pipeline-solo-plan.md

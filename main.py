@@ -9,6 +9,11 @@ Usage:
     python3 main.py --preview           # Generate HTML previews (standalone)
     python3 main.py --disambiguate      # Run LLM disambiguation (standalone)
     python3 main.py --reconcile         # Link records across sources (standalone)
+    python3 main.py --query NAME        # Print one query, resolved from .env
+    python3 main.py --write-queries     # Write every resolved query to disk
+
+Configuration is read from the environment, with a .env file in the project root
+loaded at startup. Copy .env.example to .env to get started.
 """
 
 import argparse
@@ -20,6 +25,16 @@ from pathlib import Path
 from src.errors import ConfigError, SeedDataError
 
 logger = logging.getLogger(__name__)
+
+
+def load_configuration():
+    """Read .env before any module reads the environment.
+
+    Called first so that every later import sees the same configuration,
+    including modules that read a value once at import time.
+    """
+    from src.config import load_env_file
+    return load_env_file()
 
 
 def setup_logging():
@@ -41,6 +56,7 @@ def get_paths():
         "rdf_output": project_root / "data" / "output" / "rdf",
         "preview_output": project_root / "data" / "output" / "previews",
         "disambig_output": project_root / "data" / "output" / "disambiguation",
+        "query_output": project_root / "data" / "output" / "queries",
         "raw_base": project_root / "data" / "raw",
     }
 
@@ -86,6 +102,26 @@ def run_harvest(sources, paths):
     total_pubs = sum(len(pubs) for _, pubs in all_results)
     logger.info("Harvest complete: %d total publication assertions", total_pubs)
     return all_results
+
+
+def run_query(name):
+    """Print one query with the configured values substituted in.
+
+    Printed to stdout so it can be piped straight to a SPARQL endpoint:
+
+        uv run python3 main.py --query collaborating-institutions | \
+            curl -s http://localhost:3030/faculty/sparql \
+                 --data-urlencode query@- -H "Accept: text/csv"
+    """
+    from src.queries import load_query
+    print(load_query(name))
+
+
+def run_write_queries(paths):
+    """Write every query, resolved, so each can be opened and run as-is."""
+    logger.info("=== Writing Resolved Queries ===")
+    from src.queries import write_resolved_queries
+    return write_resolved_queries(paths["query_output"])
 
 
 def run_reconcile(paths):
@@ -196,13 +232,39 @@ def parse_args():
         action="store_true",
         help="Link records across sources into their own graph (standalone or with --full).",
     )
+    parser.add_argument(
+        "--query",
+        metavar="NAME",
+        help="Print one SPARQL query to stdout with .env values substituted in.",
+    )
+    parser.add_argument(
+        "--list-queries",
+        action="store_true",
+        help="List the available query names.",
+    )
+    parser.add_argument(
+        "--write-queries",
+        action="store_true",
+        help="Write every resolved query to data/output/queries/.",
+    )
     return parser.parse_args()
 
 
 def main():
+    load_configuration()
     setup_logging()
     args = parse_args()
     paths = get_paths()
+
+    # Query rendering needs configuration but no harvest, so it runs before the
+    # seed-file check that the pipeline stages depend on.
+    if args.list_queries or args.query or args.write_queries:
+        try:
+            run_query_stages(args, paths)
+        except ConfigError as error:
+            logger.error("%s", error)
+            sys.exit(1)
+        return
 
     if not paths["seed_csv"].exists():
         logger.error(
@@ -221,6 +283,19 @@ def main():
     except ConfigError as error:
         logger.error("Invalid configuration: %s", error)
         sys.exit(1)
+
+
+def run_query_stages(args, paths):
+    """Handle the query flags, which read configuration but no harvested data."""
+    from src.queries import available_queries
+
+    if args.list_queries:
+        for name in available_queries():
+            print(name)
+    if args.query:
+        run_query(args.query)
+    if args.write_queries:
+        run_write_queries(paths)
 
 
 def run_post_harvest_stages(args, paths):

@@ -4,7 +4,7 @@
 # behind it. This lists the ones flagged for a human, strongest evidence last,
 # so review effort goes to the shakiest links first.
 
-PREFIX fg:   <http://example.org/faculty-graph/>
+PREFIX fg:   <{{FG_BASE_URI}}>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
 

@@ -18,6 +18,13 @@ QUERIES_DIR = pathlib.Path(__file__).resolve().parent.parent / "queries"
 EX_ROR = "https://ror.org/abc123456"
 MIT_ROR = "https://ror.org/042nb2s44"
 
+
+@pytest.fixture(autouse=True)
+def configured_institution(monkeypatch):
+    """Queries are templates now, so resolving one needs a configured home ROR."""
+    monkeypatch.setenv("INSTITUTION_ROR", EX_ROR)
+    monkeypatch.setenv("INSTITUTION_NAME", "Example University")
+
 FACULTY = {
     "faculty_id": "fac-001",
     "full_name": "Ada Lovelace",
@@ -28,8 +35,10 @@ FACULTY = {
 
 
 def load_query(name):
-    """Read one shipped query file."""
-    return (QUERIES_DIR / name).read_text(encoding="utf-8")
+    """Resolve one shipped query template against the configured institution."""
+    from src.queries import load_query as resolve
+
+    return resolve(name.removesuffix(".rq"))
 
 
 def collaboration_graph(status="candidate"):

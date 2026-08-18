@@ -2,30 +2,49 @@
 
 An RDF-based pipeline that harvests public faculty publication data from ORCID, PubMed, and OpenAlex, reconciles it into a trusted knowledge graph with human review support, and generates faculty publication previews.
 
-It is institution-agnostic: point it at any university by setting `INSTITUTION_NAME` and supplying your own faculty seed list. Nothing about a specific school is hardcoded.
+It is institution-agnostic: point it at any university through a `.env` file and
+your own faculty seed list. Nothing about a specific school is hardcoded — not in
+the code, not in the queries, not in the vocabulary.
 
 ## What This Prototype Does
 
 - Reads a seed list of faculty, ideally with known ORCID iDs.
 - Fetches publication records from three sources: ORCID, PubMed, and OpenAlex.
 - Converts harvested data into RDF (Turtle format) with per-source provenance.
-- Deduplicates publications by DOI/PMID while preserving separate assertions per source.
+- Keeps each source's records in their own graph, and links them in a separate,
+  reversible reconciliation pass rather than merging at ingest.
+- Models institutions as resources identified by ROR, so cross-institution
+  collaborations are a one-hop query.
+- Records authorship as its own node: author position, corresponding-author
+  status, and the affiliation credited on that paper.
+- Keeps names and page ranges in the parts their source stated them in, and
+  labels any part it had to infer.
 - Supports human review decisions (rejections/verifications) that persist across re-harvests.
 - Runs LLM-based disambiguation on candidate matches via local Ollama (`gemma4` by default).
 - Generates static HTML preview pages for each faculty member.
+- Publishes its own vocabulary with alignment axioms to BIBO, Dublin Core,
+  PROV-O, W3C Org, FOAF, VIVO, and schema.org.
 - Loads RDF into a triple store (Fuseki or QLever) for SPARQL querying.
 
 ## What This Prototype Does Not Do (Yet)
 
 - Drupal publishing.
-- University-scale coverage.
+- University-scale coverage. Discovery is driven by the faculty seed list, so a
+  person absent from it can only appear as a co-author.
 - Faculty approval workflow.
+- Journals as resources: `fg:journal` is a string, with no ISSN-identified node.
+- ROR API lookup: organization reconciliation matches only against organizations
+  already present in the harvest.
+
+`docs/modeling-rules.md` lists the modelling gaps in full, and `docs/roadmap.md`
+carries the phased plan these came from.
 
 ## Project Structure
 
 ```text
 faculty-graph/
 ├── README.md
+├── .env.example              # Configuration template (copy to .env, git-ignored)
 ├── main.py                   # CLI entry point (orchestration only)
 ├── pyproject.toml
 ├── docs/
@@ -52,10 +71,11 @@ faculty-graph/
 │       │   └── reconciliation.ttl   # Cross-source links, and nothing else
 │       ├── previews/         # HTML faculty preview pages
 │       ├── disambiguation/   # LLM scoring results
+│       ├── queries/          # Resolved queries from --write-queries
 │       └── logs/             # Harvest run logs
 ├── ontology/
 │   └── fg.ttl                # The fg: vocabulary, with alignment axioms
-├── queries/
+├── queries/                  # Query templates; {{placeholders}} filled from .env
 │   ├── publications-by-faculty.rq
 │   ├── rejected-matches.rq
 │   ├── source-overlap.rq
@@ -70,6 +90,7 @@ faculty-graph/
 ├── src/
 │   ├── config.py             # Institution settings read from the environment
 │   ├── provenance.py         # Search method -> assertion status rules
+│   ├── queries.py            # Resolves query templates against config
 │   ├── names.py              # Personal name parts, kept separate
 │   ├── errors.py             # HarvestError, SeedDataError, ConfigError
 │   ├── harvest_orcid/        # ORCID harvester + seed list loader
@@ -101,27 +122,33 @@ faculty-graph/
 # Install dependencies
 uv sync
 
+# Configure the pipeline for your institution
+cp .env.example .env
+$EDITOR .env
+
 # Create your faculty seed list from the template
 cp data/seed/faculty.csv.example data/seed/faculty.csv
 $EDITOR data/seed/faculty.csv
 
-# Tell the pipeline which institution to filter on
-export INSTITUTION_NAME="Your University"
-
 # Optional: add PyYAML for human review support
 uv sync --extra review
 
-# Run the whole pipeline: harvest every source, disambiguate, build previews
+# Run the whole pipeline: harvest, disambiguate, reconcile, build previews
 uv run python3 main.py --full
 
-# Output lands in data/output/rdf/, data/raw/, and data/output/previews/
-# The combined graph is data/output/rdf/faculty-all.ttl (what the loaders read)
+# Raw source responses land in data/raw/, previews in data/output/previews/.
+# In data/output/rdf/:
+#   faculty-all.ttl      merged graph, what the loader scripts read
+#   by-source/*.ttl      one unmerged graph per source
+#   reconciliation.ttl   cross-source links, and nothing else
 ```
 
 ## Command Line Reference
 
 ```text
-usage: main.py [--source {orcid,pubmed,openalex}] [--full] [--preview] [--disambiguate]
+usage: main.py [-h] [--source {orcid,pubmed,openalex}] [--full] [--preview]
+               [--disambiguate] [--reconcile] [--query NAME] [--list-queries]
+               [--write-queries]
 ```
 
 | Flag | Description |
@@ -132,10 +159,17 @@ usage: main.py [--source {orcid,pubmed,openalex}] [--full] [--preview] [--disamb
 | `--preview` | Generate HTML preview pages from data already in `data/raw/`. No network calls. |
 | `--disambiguate` | Score candidate matches with the local Ollama model. Reads `data/raw/`, so no network calls to the publication sources. |
 | `--reconcile` | Link records that different sources reported separately, writing only links into `reconciliation.ttl`. Reads `data/raw/`; makes no network calls. |
+| `--list-queries` | List the available query names. |
+| `--query NAME` | Print one query to stdout with your `.env` values substituted in. |
+| `--write-queries` | Write every resolved query to `data/output/queries/`. |
 
-`--preview` and `--disambiguate` run standalone or together; combined, disambiguation
-runs first so the previews reflect the fresh scores. Both reload `data/raw/`, so you
-can re-run either one without re-harvesting.
+`--preview`, `--disambiguate`, and `--reconcile` run standalone or in any
+combination. Whatever you ask for runs in dependency order — disambiguate,
+reconcile, preview — so a preview always reflects this run's scores and links.
+All three reload `data/raw/`, so any of them can be re-run without re-harvesting.
+
+The query flags need no harvest at all: they read configuration only, and are
+handled before the seed file is even looked for.
 
 ```bash
 # Harvest everything (default when no flag is given)
@@ -158,15 +192,31 @@ uv run python3 main.py --disambiguate
 
 # Re-link records across sources from an existing harvest
 uv run python3 main.py --reconcile
+
+# Run a query against Fuseki, resolved from .env
+uv run python3 main.py --query collaborating-institutions | \
+    curl -s http://localhost:3030/faculty/sparql \
+         --data-urlencode query@- -H "Accept: text/csv"
 ```
 
-## Environment Variables
+## Configuration
+
+Configuration is read from the environment. A `.env` file in the project root is
+loaded at startup, so the usual way to set these is to copy `.env.example` to
+`.env` and edit it. `.env` is git-ignored.
+
+Anything already exported in your shell wins over the file, so a one-off run
+never means editing configuration:
+
+```bash
+INSTITUTION_ROR="https://ror.org/042nb2s44" uv run python3 main.py --query collaborating-institutions
+```
 
 | Variable | Required | Description |
 |---|---|---|
 | `INSTITUTION_NAME` | Recommended | Institution name as OpenAlex spells it, used to constrain name searches (default: `Example University`). Set it empty to search all institutions. |
 | `INSTITUTION_AFFILIATION` | No | Affiliation substring for PubMed searches (default: `INSTITUTION_NAME`). Use a shorter form when papers rarely write the full name. |
-| `INSTITUTION_ROR` | Recommended | Your institution's ROR IRI, e.g. `https://ror.org/abc123456` (look it up at <https://ror.org>). Without it the graph cannot tell which collaborations are external. Accepts the bare ID or either IRI form. |
+| `INSTITUTION_ROR` | Recommended | Your institution's ROR IRI, e.g. `https://ror.org/abc123456` (look it up at <https://ror.org>). Without it the collaboration queries cannot run. Accepts the bare ID or either IRI form. **Comma-separate several** when one institution holds more than one ROR entry — Example University (`abc123456`) and Example University Hospital (`abc123456`) are separate records, and a paper written across both is internal rather than a collaboration. |
 | `FG_BASE_URI` | No | Base IRI for generated RDF; must be absolute and end with `/` (default: `http://example.org/faculty-graph/`) |
 | `NCBI_API_KEY` | No | Higher PubMed rate limits (3 req/s without, 10 with) |
 | `OPENALEX_EMAIL` | No | OpenAlex polite pool access |
@@ -205,14 +255,36 @@ immediately with the offending line number rather than midway through a harvest.
    Getting this wrong silently returns zero name-search results.
 3. If your papers list a shorter affiliation than the full legal name, set
    `INSTITUTION_AFFILIATION` to that shorter form for PubMed.
-4. Optionally set `FG_BASE_URI` to a namespace you control. If you do, update the
-   matching `PREFIX` lines in `queries/*.rq` — they are written against the
-   default namespace.
-5. Edit `queries/topic-publications.rq` to use the keywords your institution
+4. Set `INSTITUTION_ROR` to your institution's ROR IRI, from <https://ror.org>.
+   Comma-separate several if your institution holds more than one registered
+   entry. Without it the collaboration queries cannot run.
+5. Optionally set `FG_BASE_URI` to a namespace you control. The queries pick this
+   up automatically — they are templates, not fixed text.
+6. Edit `queries/topic-publications.rq` to use the keywords your institution
    reports on.
 
 None of these settings affect ORCID-iD searches: an iD is authoritative on its
 own, so it is never filtered by institution.
+
+### Queries Are Templates
+
+The files in `queries/` carry `{{PLACEHOLDER}}` markers rather than one
+institution's values, and are resolved against your configuration when used:
+
+| Placeholder | Filled from |
+|---|---|
+| `{{FG_BASE_URI}}` / `{{FGDATA_BASE_URI}}` | `FG_BASE_URI` |
+| `{{INSTITUTION_ROR_VALUES}}` | `INSTITUTION_ROR`, rendered as a SPARQL `VALUES` list |
+| `{{INSTITUTION_NAME}}` | `INSTITUTION_NAME` |
+
+A placeholder with no configured value is an error, not an empty substitution.
+An unresolved query would still parse as valid SPARQL, run against the endpoint,
+and return nothing — no error, no results, no reason. That failure is worth
+preventing loudly.
+
+One value stays manual: `?partner` in `collaborators-by-institution.rq` names
+which outside institution you are drilling into, which is a per-question choice
+rather than configuration.
 
 ## Tests
 
@@ -225,9 +297,11 @@ The suite is offline and deterministic: every source response is built from
 synthetic fixtures in `tests/fixtures.py`, so no test touches the network or
 reads `data/raw/`.
 
-`tests/test_converter.py` parses all generated Turtle with `rdflib`. Those tests
-skip if `rdflib` is missing rather than failing, but a triple store will reject
-output they would have caught, so sync the `dev` extra before trusting a run.
+Generated Turtle is parsed with `rdflib` rather than string-matched, the shipped
+queries are run against it, and `tests/test_ontology.py` checks the vocabulary
+against what the code emits in both directions. Those tests skip if `rdflib` is
+missing rather than failing, but a triple store will reject output they would
+have caught, so sync the `dev` extra before trusting a run.
 
 ## Human Review
 
@@ -259,8 +333,9 @@ curl -X POST http://localhost:3030/$/datasets -d 'dbName=faculty&dbType=tdb2'
 ## Data Model
 
 See `data/output/rdf/example.ttl` for the hand-written reference model showing
-faculty, publications, provenance, and assertion statuses (candidate, verified,
-rejected, authoritative).
+faculty, publications, provenance, assertion statuses (candidate, verified,
+rejected, authoritative), organizations, and authorship. `ontology/fg.ttl` is the
+formal definition of every term it uses.
 
 Node IRIs are written in full angle-bracket form
 (`<http://example.org/faculty-graph/data/faculty/fac-001>`) rather than as
@@ -345,11 +420,19 @@ claimed by two different registered organizations are left unreconciled rather
 than guessed. Querying ror.org for institutions absent from the harvest is not
 implemented — that needs a network boundary and its own consent.
 
+### Names and Bibliographic Detail
+
 Personal names keep their parts: `foaf:givenName` and `foaf:familyName` are
 emitted separately from `foaf:name`, and `fg:nameSource` says whether a source
 stated the parts (`"structured"`) or we split a rendered string (`"display"`).
 A name that cannot be split unambiguously is left unsplit rather than split
-wrongly.
+wrongly — a consumer that cares about name accuracy filters on provenance
+instead of discovering the problem later.
+
+Citation detail survives as `bibo:volume`, `bibo:issue`, `bibo:issn`, and
+`bibo:pages`, with `bibo:pageStart` and `bibo:pageEnd` alongside when the range
+splits. Authors carry their position on the work, the source's own role label,
+and the corresponding-author flag.
 
 ---
 

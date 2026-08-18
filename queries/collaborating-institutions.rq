@@ -5,17 +5,21 @@
 # different organization. Rejected assertions are excluded, so a match a human
 # has thrown out never inflates a collaboration count.
 #
-# Set ?home to your own institution's ROR IRI before running.
+# ?home is filled in from INSTITUTION_ROR in your .env at runtime. List several
+# there (comma-separated) when your institution holds more than one ROR entry;
+# a work co-authored across two of them is then internal, not a collaboration.
 
-PREFIX fg:     <http://example.org/faculty-graph/>
-PREFIX fgdata: <http://example.org/faculty-graph/data/>
+PREFIX fg:     <{{FG_BASE_URI}}>
+PREFIX fgdata: <{{FGDATA_BASE_URI}}>
 PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
 PREFIX rdfs:   <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX org:    <http://www.w3.org/ns/org#>
 
 SELECT ?partner_name ?partner_ror (COUNT(DISTINCT ?work) AS ?shared_works)
 WHERE {
-    VALUES ?home { <https://ror.org/abc123456> }
+    VALUES ?home {
+        {{INSTITUTION_ROR_VALUES}}
+    }
 
     ?home_authorship a fg:Authorship ;
                      fg:work ?work ;

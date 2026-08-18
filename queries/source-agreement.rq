@@ -5,7 +5,7 @@
 # on what basis — a pair agreeing mostly on titles is weaker evidence than a
 # pair agreeing on DOIs, and this shows the difference.
 
-PREFIX fg: <http://example.org/faculty-graph/>
+PREFIX fg: <{{FG_BASE_URI}}>
 
 SELECT ?method (COUNT(DISTINCT ?canonical) AS ?linked_works)
 WHERE {

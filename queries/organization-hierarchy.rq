@@ -5,7 +5,7 @@
 # Research Organization Registry names it, "local" means we minted the IRI from
 # a name and it is a candidate for reconciliation.
 
-PREFIX fg:   <http://example.org/faculty-graph/>
+PREFIX fg:   <{{FG_BASE_URI}}>
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX org:  <http://www.w3.org/ns/org#>

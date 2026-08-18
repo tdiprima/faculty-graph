@@ -1,8 +1,8 @@
 # Publications whose title mentions a topic of interest.
 # Replace the keywords below with the terms your institution reports on.
 
-PREFIX fg:     <http://example.org/faculty-graph/>
-PREFIX fgdata: <http://example.org/faculty-graph/data/>
+PREFIX fg:     <{{FG_BASE_URI}}>
+PREFIX fgdata: <{{FGDATA_BASE_URI}}>
 PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
 PREFIX dcterms: <http://purl.org/dc/terms/>
 PREFIX bibo:   <http://purl.org/ontology/bibo/>
