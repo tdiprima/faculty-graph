@@ -52,11 +52,7 @@ faculty-graph/
 # Install dependencies
 pip install -e .
 
-# Set ORCID API credentials (optional - public API works without)
-export ORCID_CLIENT_ID=your_client_id
-export ORCID_CLIENT_SECRET=your_client_secret
-
-# Run the ORCID harvester
+# Run the ORCID harvester (no API key needed - uses ORCID public API)
 python -m src.harvest_orcid.client
 
 # Output lands in data/output/rdf/ and data/raw/orcid/
