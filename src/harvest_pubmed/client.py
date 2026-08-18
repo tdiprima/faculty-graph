@@ -10,10 +10,12 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from src.harvest_pubmed.parser import parse_pubmed_xml
+from src.provenance import SEARCH_METHOD_NAME, SEARCH_METHOD_ORCID, tag_publications
 
 logger = logging.getLogger(__name__)
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+SOURCE_NAME = "PubMed"
 REQUEST_DELAY_SECONDS = 0.4
 
 
@@ -140,12 +142,11 @@ def harvest_faculty(faculty, raw_dir):
         if pmids:
             xml_data = fetch_records(pmids)
             if xml_data:
-                save_raw_response(faculty_id, xml_data, raw_dir, "-orcid")
-                publications = parse_pubmed_xml(xml_data)
+                save_raw_response(faculty_id, xml_data, raw_dir, f"-{SEARCH_METHOD_ORCID}")
+                publications = tag_publications(
+                    parse_pubmed_xml(xml_data), SOURCE_NAME, SEARCH_METHOD_ORCID
+                )
                 for pub in publications:
-                    pub["source"] = "PubMed"
-                    pub["assertion_status"] = "authoritative"
-                    pub["search_method"] = "orcid"
                     if pub.get("pmid"):
                         seen_pmids.add(pub["pmid"])
                 all_publications.extend(publications)
@@ -158,12 +159,10 @@ def harvest_faculty(faculty, raw_dir):
     if new_pmids:
         xml_data = fetch_records(new_pmids)
         if xml_data:
-            save_raw_response(faculty_id, xml_data, raw_dir, "-name")
-            publications = parse_pubmed_xml(xml_data)
-            for pub in publications:
-                pub["source"] = "PubMed"
-                pub["assertion_status"] = "candidate"
-                pub["search_method"] = "name"
+            save_raw_response(faculty_id, xml_data, raw_dir, f"-{SEARCH_METHOD_NAME}")
+            publications = tag_publications(
+                parse_pubmed_xml(xml_data), SOURCE_NAME, SEARCH_METHOD_NAME
+            )
             all_publications.extend(publications)
 
     logger.info(

@@ -10,10 +10,16 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from src.harvest_openalex.parser import parse_works
+from src.provenance import (
+    SEARCH_METHOD_ORCID,
+    search_method_for_faculty,
+    tag_publications,
+)
 
 logger = logging.getLogger(__name__)
 
 OPENALEX_BASE = "https://api.openalex.org"
+SOURCE_NAME = "OpenAlex"
 REQUEST_DELAY_SECONDS = 0.2
 
 
@@ -122,26 +128,18 @@ def harvest_faculty(faculty, raw_dir):
     full_name = faculty["full_name"]
     faculty_id = faculty["faculty_id"]
 
-    if orcid_id:
+    search_method = search_method_for_faculty(faculty)
+    if search_method == SEARCH_METHOD_ORCID:
         raw_data = fetch_works_by_orcid(orcid_id)
-        search_method = "orcid"
-        default_status = "authoritative"
     else:
         raw_data = fetch_works_by_name(full_name)
-        search_method = "name"
-        default_status = "candidate"
 
     if not raw_data or not raw_data.get("results"):
         logger.warning("No OpenAlex data for %s", full_name)
         return []
 
     save_raw_response(faculty_id, raw_data, raw_dir)
-    publications = parse_works(raw_data)
-
-    for pub in publications:
-        pub["source"] = "OpenAlex"
-        pub["assertion_status"] = default_status
-        pub["search_method"] = search_method
+    publications = tag_publications(parse_works(raw_data), SOURCE_NAME, search_method)
 
     logger.info(
         "OpenAlex harvest for %s: %d publications",

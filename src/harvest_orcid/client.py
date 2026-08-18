@@ -10,10 +10,12 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from src.harvest_orcid.parser import parse_works
+from src.provenance import SEARCH_METHOD_ORCID, tag_publications
 
 logger = logging.getLogger(__name__)
 
 ORCID_API_BASE = "https://pub.orcid.org/v3.0"
+SOURCE_NAME = "ORCID"
 REQUEST_DELAY_SECONDS = 1.0
 
 
@@ -77,11 +79,9 @@ def harvest_all(faculty_list, raw_output_dir):
             continue
 
         save_raw_response(orcid_id, works_data, raw_output_dir)
-        publications = parse_works(works_data)
-
-        for pub in publications:
-            pub["source"] = "ORCID"
-            pub["assertion_status"] = "authoritative"
+        publications = tag_publications(
+            parse_works(works_data), SOURCE_NAME, SEARCH_METHOD_ORCID
+        )
 
         results.append((faculty, publications))
         time.sleep(REQUEST_DELAY_SECONDS)

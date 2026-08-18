@@ -11,7 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 RDF_DIR="${PROJECT_ROOT}/data/output/rdf"
-COMBINED_FILE="${RDF_DIR}/faculty-orcid.ttl"
+COMBINED_FILE="${RDF_DIR}/faculty-all.ttl"
 QLEVER_ENDPOINT="${1:-http://localhost:7001}"
 
 print_usage() {
@@ -52,9 +52,9 @@ if command -v qlever &> /dev/null; then
     # Copy the combined file and rebuild the index.
     QLEVER_DATA_DIR="${QLEVER_DATA_DIR:-${PROJECT_ROOT}/qlever-data}"
     mkdir -p "${QLEVER_DATA_DIR}"
-    cp "${COMBINED_FILE}" "${QLEVER_DATA_DIR}/faculty-orcid.ttl"
+    cp "${COMBINED_FILE}" "${QLEVER_DATA_DIR}/faculty-all.ttl"
 
-    echo "RDF copied to ${QLEVER_DATA_DIR}/faculty-orcid.ttl"
+    echo "RDF copied to ${QLEVER_DATA_DIR}/faculty-all.ttl"
     echo ""
     echo "Next steps:"
     echo "  cd ${QLEVER_DATA_DIR}"
@@ -83,7 +83,7 @@ else
     echo ""
     echo "Manual steps for QLever:"
     echo "  1. Copy ${COMBINED_FILE} to your QLever data directory"
-    echo "  2. Update your Qleverfile to include faculty-orcid.ttl"
+    echo "  2. Update your Qleverfile to include faculty-all.ttl"
     echo "  3. Run: qlever index && qlever start"
     echo ""
     echo "Server response: ${BODY}"

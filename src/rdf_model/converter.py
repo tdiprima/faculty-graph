@@ -23,10 +23,26 @@ PREFIXES = """\
 @prefix fgdata: <http://example.org/faculty-graph/data/> .
 """
 
+FGDATA_NAMESPACE = "http://example.org/faculty-graph/data/"
+
 
 def sanitize_uri_part(value):
     """Make a string safe for use in a URI."""
     return re.sub(r"[^a-zA-Z0-9._-]", "-", value)
+
+
+def build_data_iri(*path_parts):
+    """Build a full angle-bracket IRI under the fgdata namespace.
+
+    Turtle prefixed names cannot contain an unescaped "/", so hierarchical
+    identifiers must be emitted as absolute IRIs rather than fgdata:a/b.
+    """
+    return f"<{FGDATA_NAMESPACE}{'/'.join(path_parts)}>"
+
+
+def build_faculty_uri(faculty_id):
+    """Generate a URI for a faculty member."""
+    return build_data_iri("faculty", sanitize_uri_part(str(faculty_id)))
 
 
 def escape_turtle_string(value):
@@ -43,10 +59,10 @@ def escape_turtle_string(value):
 def build_work_uri(publication):
     """Generate a URI for a publication based on DOI, PMID, or title."""
     if publication.get("doi"):
-        return f"fgdata:work/doi-{sanitize_uri_part(publication['doi'])}"
+        return build_data_iri("work", f"doi-{sanitize_uri_part(publication['doi'])}")
     if publication.get("pmid"):
-        return f"fgdata:work/pmid-{sanitize_uri_part(str(publication['pmid']))}"
-    return f"fgdata:work/title-{sanitize_uri_part(publication['title'][:80])}"
+        return build_data_iri("work", f"pmid-{sanitize_uri_part(str(publication['pmid']))}")
+    return build_data_iri("work", f"title-{sanitize_uri_part(publication['title'][:80])}")
 
 
 def build_assertion_uri(faculty_id, source, publication):
@@ -58,7 +74,8 @@ def build_assertion_uri(faculty_id, source, publication):
     else:
         work_key = f"title-{sanitize_uri_part(publication['title'][:60])}"
     source_key = sanitize_uri_part(source.lower())
-    return f"fgdata:assertion/{faculty_id}-{source_key}-{work_key}"
+    faculty_key = sanitize_uri_part(str(faculty_id))
+    return build_data_iri("assertion", f"{faculty_key}-{source_key}-{work_key}")
 
 
 def format_date_literal(date_str):
@@ -76,7 +93,7 @@ def faculty_to_turtle(faculty):
     """Generate Turtle triples for a faculty member."""
     faculty_id = faculty["faculty_id"]
     lines = [
-        f"fgdata:faculty/{faculty_id}",
+        build_faculty_uri(faculty_id),
         f"    a                   foaf:Person ;",
         f'    foaf:name           "{escape_turtle_string(faculty["full_name"])}" ;',
         f'    fg:facultyId        "{faculty_id}" ;',
@@ -140,7 +157,7 @@ def assertion_to_turtle(faculty_id, publication, harvest_timestamp):
     lines = [
         f"{assertion_uri}",
         f"    a                   fg:PublicationAssertion ;",
-        f"    fg:faculty          fgdata:faculty/{faculty_id} ;",
+        f"    fg:faculty          {build_faculty_uri(faculty_id)} ;",
         f"    fg:work             {work_uri} ;",
         f"    fg:status           fg:{status} ;",
         f"    fg:source           {source_uri} ;",
@@ -174,7 +191,7 @@ def coauthor_to_turtle(publication):
         name = coauthor.get("name", "")
         if not name:
             continue
-        coauthor_uri = f"fgdata:person/{sanitize_uri_part(name[:60])}"
+        coauthor_uri = build_data_iri("person", sanitize_uri_part(name[:60]))
         lines.append(f"{coauthor_uri}")
         lines.append(f"    a                   foaf:Person ;")
         lines.append(f'    foaf:name           "{escape_turtle_string(name)}" ;')

@@ -11,10 +11,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 RDF_DIR="${PROJECT_ROOT}/data/output/rdf"
-COMBINED_FILE="${RDF_DIR}/faculty-orcid.ttl"
+COMBINED_FILE="${RDF_DIR}/faculty-all.ttl"
 FUSEKI_URL="${1:-http://localhost:3030}"
 DATASET="${2:-faculty}"
-GRAPH_URI="http://example.org/faculty-graph/orcid"
+GRAPH_URI="http://example.org/faculty-graph/data"
 
 print_usage() {
     echo "Usage: $0 [fuseki_url] [dataset_name]"
@@ -62,7 +62,7 @@ fi
 echo "Fuseki reachable. Uploading..."
 
 # Upload using Graph Store Protocol (PUT replaces, POST appends)
-# Using PUT to replace the ORCID graph on each harvest run
+# Using PUT to replace the faculty graph on each harvest run
 RESPONSE=$(curl --silent --write-out "\n%{http_code}" \
     --request PUT \
     --header "Content-Type: text/turtle" \

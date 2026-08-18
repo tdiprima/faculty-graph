@@ -11,7 +11,6 @@ Usage:
 """
 
 import argparse
-import json
 import logging
 import os
 import sys
@@ -93,10 +92,10 @@ def run_preview(paths):
 
 
 def run_disambiguate(paths):
-    """Run LLM disambiguation on candidate publications."""
+    """Run LLM disambiguation on candidate publications from the raw harvest."""
     logger.info("=== Running LLM Disambiguation ===")
     from src.harvest_orcid.client import load_seed_faculty
-    from src.harvest_orcid.parser import parse_works
+    from src.disambiguate.loader import load_candidates, load_known_works
     from src.disambiguate.scorer import score_batch, save_scores
 
     faculty_list = load_seed_faculty(paths["seed_csv"])
@@ -104,27 +103,9 @@ def run_disambiguate(paths):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for faculty in faculty_list:
-        faculty_id = faculty["faculty_id"]
-
-        orcid_known = []
-        orcid_raw = paths["raw_orcid"] / f"{faculty.get('orcid', '')}.json"
-        if orcid_raw.exists():
-            with open(orcid_raw, encoding="utf-8") as infile:
-                orcid_known = parse_works(json.load(infile))
-
-        candidates = []
-        for source_dir in [paths["raw_pubmed"], paths["raw_openalex"]]:
-            if not source_dir.exists():
-                continue
-            for candidate_file in source_dir.glob(f"{faculty_id}*.json"):
-                with open(candidate_file, encoding="utf-8") as infile:
-                    data = json.load(infile)
-                if "results" in data:
-                    from src.harvest_openalex.parser import parse_works as parse_oa
-                    candidates.extend(parse_oa(data))
-
-        candidates = [c for c in candidates if c.get("assertion_status") == "candidate"]
-
+        candidates = load_candidates(
+            faculty, paths["raw_pubmed"], paths["raw_openalex"]
+        )
         if not candidates:
             logger.info("No candidates to disambiguate for %s", faculty["full_name"])
             continue
@@ -134,8 +115,9 @@ def run_disambiguate(paths):
             len(candidates),
             faculty["full_name"],
         )
-        scores = score_batch(faculty, candidates, orcid_known)
-        save_scores(scores, output_dir / f"{faculty_id}-scores.json")
+        known_works = load_known_works(faculty, paths["raw_orcid"])
+        scores = score_batch(faculty, candidates, known_works)
+        save_scores(scores, output_dir / f"{faculty['faculty_id']}-scores.json")
 
     logger.info("Disambiguation complete")
 

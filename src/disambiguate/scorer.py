@@ -1,10 +1,11 @@
 """LLM-based disambiguation for candidate publication matches.
 
-Uses a local Ollama instance (gemma4 model) to evaluate whether a candidate
+Uses a local Ollama instance to evaluate whether a candidate
 publication belongs to a specific faculty member. Stores recommendations as
 evidence, not as final truth.
 
-Requires Ollama running locally (default: http://localhost:11434).
+Requires Ollama running locally. Configure with the OLLAMA_URL and OLLAMA_MODEL
+environment variables (defaults: http://localhost:11434, gemma4).
 """
 
 import json
@@ -16,7 +17,7 @@ from urllib.error import HTTPError, URLError
 logger = logging.getLogger(__name__)
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-DEFAULT_MODEL = "gemma4"
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4")
 
 
 def _build_prompt(faculty, candidate, known_publications=None):
