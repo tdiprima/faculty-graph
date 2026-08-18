@@ -420,6 +420,9 @@ def test_unrelated_works_are_still_separate_nodes():
 
 BIBO = rdflib.Namespace("http://purl.org/ontology/bibo/")
 FOAF = rdflib.Namespace("http://xmlns.com/foaf/0.1/")
+ORG = rdflib.Namespace("http://www.w3.org/ns/org#")
+DCTERMS = rdflib.Namespace("http://purl.org/dc/terms/")
+RDFS = rdflib.RDFS
 
 
 def objects_for(graph, predicate):
@@ -492,7 +495,7 @@ def test_an_unsplit_name_emits_no_name_part_triples():
     assert "Prince" in objects_for(graph, FOAF.name)
 
 
-def test_institution_with_a_ror_id_reaches_the_graph():
+def test_institution_with_a_ror_id_becomes_a_ror_subject():
     turtle = render([publication(coauthors=[{
         "name": "Ada Lovelace",
         "institutions": [{
@@ -502,22 +505,58 @@ def test_institution_with_a_ror_id_reaches_the_graph():
         }],
     }])])
     graph = parse(turtle)
-    ror_id = rdflib.URIRef(f"{converter.FG_NAMESPACE}rorId")
-    org_name = rdflib.URIRef(f"{converter.FG_NAMESPACE}orgName")
-    assert objects_for(graph, ror_id) == ["https://ror.org/abc123456"]
-    assert objects_for(graph, org_name) == ["Example University"]
+    organization = rdflib.URIRef("https://ror.org/abc123456")
+    assert (organization, RDFS.label, rdflib.Literal("Example University")) in graph
+    kind = rdflib.URIRef(f"{converter.FG_NAMESPACE}identifierKind")
+    assert str(graph.value(organization, kind)) == "ror"
 
 
-def test_institution_without_a_ror_id_still_records_its_name():
+def test_the_same_ror_written_two_ways_yields_one_organization():
+    turtle = render([
+        publication(doi="10.1/a", coauthors=[{
+            "name": "Ada Lovelace",
+            "institutions": [{
+                "display_name": "Example University",
+                "ror": "https://ror.org/abc123456",
+            }],
+        }]),
+        publication(doi="10.1/b", coauthors=[{
+            "name": "Alan Turing",
+            "institutions": [{
+                "display_name": "Example University",
+                "ror": "abc123456",
+            }],
+        }]),
+    ])
+    graph = parse(turtle)
+    organizations = set(graph.subjects(rdflib.RDF.type, ORG.Organization))
+    assert rdflib.URIRef("https://ror.org/abc123456") in organizations
+
+
+def test_institution_without_a_ror_id_gets_a_local_iri():
     turtle = render([publication(coauthors=[{
         "name": "Ada Lovelace",
         "institutions": [{"display_name": "Some Institute", "ror": None}],
     }])])
     graph = parse(turtle)
-    ror_id = rdflib.URIRef(f"{converter.FG_NAMESPACE}rorId")
-    org_name = rdflib.URIRef(f"{converter.FG_NAMESPACE}orgName")
-    assert objects_for(graph, org_name) == ["Some Institute"]
-    assert objects_for(graph, ror_id) == []
+    kind = rdflib.URIRef(f"{converter.FG_NAMESPACE}identifierKind")
+    local = [
+        subject for subject in graph.subjects(RDFS.label, rdflib.Literal("Some Institute"))
+    ]
+    assert len(local) == 1
+    assert str(local[0]).startswith(converter.FGDATA_NAMESPACE)
+    assert str(graph.value(local[0], kind)) == "local"
+
+
+def test_a_malformed_ror_falls_back_to_a_local_iri_without_failing():
+    turtle = render([publication(coauthors=[{
+        "name": "Ada Lovelace",
+        "institutions": [{"display_name": "Bad Ror University", "ror": "not-a-ror"}],
+    }])])
+    graph = parse(turtle)
+    subjects = list(graph.subjects(RDFS.label, rdflib.Literal("Bad Ror University")))
+    assert len(subjects) == 1
+    assert "ror.org" not in str(subjects[0])
 
 
 def test_raw_pubmed_affiliation_is_kept_verbatim():
@@ -529,6 +568,7 @@ def test_raw_pubmed_affiliation_is_kept_verbatim():
     graph = parse(turtle)
     affiliation_raw = rdflib.URIRef(f"{converter.FG_NAMESPACE}affiliationRaw")
     assert objects_for(graph, affiliation_raw) == [affiliation]
+    assert affiliation in turtle
 
 
 def test_a_coauthor_with_no_affiliation_still_parses():
@@ -544,3 +584,187 @@ def test_hostile_affiliation_string_is_escaped():
     }])]))
     injected = rdflib.URIRef(f"{converter.FG_NAMESPACE}injected")
     assert list(graph.objects(None, injected)) == []
+
+
+# ── Phase 2: authorship and organization structure ──
+
+
+FG_ORG_PARENT = ORG.subOrganizationOf
+
+
+def authorships_in(graph):
+    """Return every fg:Authorship subject in the graph."""
+    authorship_type = rdflib.URIRef(f"{converter.FG_NAMESPACE}Authorship")
+    return list(graph.subjects(rdflib.RDF.type, authorship_type))
+
+
+def coauthor(**overrides):
+    """A minimally complete co-author record."""
+    record = {"name": "Ada Lovelace", "position": 1}
+    record.update(overrides)
+    return record
+
+
+def test_each_author_gets_one_authorship_node():
+    graph = parse(render([publication(coauthors=[
+        coauthor(name="Ada Lovelace", position=1),
+        coauthor(name="Alan Turing", position=2),
+    ])]))
+    assert len(authorships_in(graph)) == 2
+
+
+def test_authorship_links_work_author_and_position():
+    graph = parse(render([publication(doi="10.1/x", coauthors=[coauthor(position=3)])]))
+    authorship = authorships_in(graph)[0]
+    fg_work = rdflib.URIRef(f"{converter.FG_NAMESPACE}work")
+    fg_author = rdflib.URIRef(f"{converter.FG_NAMESPACE}author")
+    fg_position = rdflib.URIRef(f"{converter.FG_NAMESPACE}position")
+    assert graph.value(authorship, fg_work) is not None
+    assert graph.value(authorship, fg_author) is not None
+    assert int(graph.value(authorship, fg_position)) == 3
+
+
+def test_affiliation_hangs_off_the_authorship_not_the_person():
+    graph = parse(render([publication(coauthors=[coauthor(institutions=[{
+        "display_name": "Example University",
+        "ror": "https://ror.org/abc123456",
+    }])])]))
+    affiliated_with = rdflib.URIRef(f"{converter.FG_NAMESPACE}affiliatedWith")
+    organization = rdflib.URIRef("https://ror.org/abc123456")
+    authorship = authorships_in(graph)[0]
+    assert (authorship, affiliated_with, organization) in graph
+    person = rdflib.URIRef(f"{converter.FGDATA_NAMESPACE}person/Ada-Lovelace")
+    assert (person, affiliated_with, organization) not in graph
+
+
+def test_a_multi_affiliated_author_keeps_every_organization():
+    graph = parse(render([publication(coauthors=[coauthor(institutions=[
+        {"display_name": "Example University", "ror": "https://ror.org/abc123456"},
+        {"display_name": "Massachusetts Institute of Technology", "ror": "https://ror.org/042nb2s44"},
+    ])])]))
+    affiliated_with = rdflib.URIRef(f"{converter.FG_NAMESPACE}affiliatedWith")
+    authorship = authorships_in(graph)[0]
+    assert len(list(graph.objects(authorship, affiliated_with))) == 2
+
+
+def test_two_institutions_on_one_work_are_both_organization_nodes():
+    graph = parse(render([publication(coauthors=[
+        coauthor(name="Ada Lovelace", position=1, institutions=[
+            {"display_name": "Example University", "ror": "https://ror.org/abc123456"}
+        ]),
+        coauthor(name="Alan Turing", position=2, institutions=[
+            {"display_name": "Princeton University", "ror": "https://ror.org/00hx57361"}
+        ]),
+    ])]))
+    organizations = set(graph.subjects(rdflib.RDF.type, ORG.Organization))
+    assert rdflib.URIRef("https://ror.org/abc123456") in organizations
+    assert rdflib.URIRef("https://ror.org/00hx57361") in organizations
+
+
+def test_person_iri_prefers_orcid_over_name():
+    graph = parse(render([publication(coauthors=[
+        coauthor(orcid="0000-0002-1825-0097"),
+    ])]))
+    expected = rdflib.URIRef(
+        f"{converter.FGDATA_NAMESPACE}person/orcid-0000-0002-1825-0097"
+    )
+    assert (expected, FOAF.name, rdflib.Literal("Ada Lovelace")) in graph
+
+
+def test_one_orcid_spelled_under_two_names_is_one_person():
+    graph = parse(render([
+        publication(doi="10.1/a", coauthors=[
+            coauthor(name="Ada Lovelace", orcid="0000-0002-1825-0097"),
+        ]),
+        publication(doi="10.1/b", coauthors=[
+            coauthor(name="A. Lovelace", orcid="0000-0002-1825-0097"),
+        ]),
+    ]))
+    people = set(graph.subjects(rdflib.RDF.type, FOAF.Person))
+    orcid_people = [p for p in people if "orcid-0000-0002-1825-0097" in str(p)]
+    assert len(orcid_people) == 1
+
+
+def test_dcterms_creator_link_is_kept_for_existing_queries():
+    graph = parse(render([publication(coauthors=[coauthor()])]))
+    creators = list(graph.objects(None, DCTERMS.creator))
+    assert len(creators) == 1
+
+
+def test_faculty_is_linked_to_a_department_resource():
+    graph = parse(render([publication()]))
+    faculty = rdflib.URIRef(f"{converter.FGDATA_NAMESPACE}faculty/fac-001")
+    department = graph.value(faculty, ORG.memberOf)
+    assert department is not None
+    assert (department, RDFS.label, rdflib.Literal("Psychoceramics")) in graph
+
+
+def test_the_department_string_survives_alongside_the_link():
+    graph = parse(render([publication()]))
+    faculty = rdflib.URIRef(f"{converter.FGDATA_NAMESPACE}faculty/fac-001")
+    fg_department = rdflib.URIRef(f"{converter.FG_NAMESPACE}department")
+    assert str(graph.value(faculty, fg_department)) == "Psychoceramics"
+
+
+def test_department_is_a_sub_organization_of_the_home_institution(monkeypatch):
+    monkeypatch.setenv("INSTITUTION_NAME", "Example University")
+    monkeypatch.setenv("INSTITUTION_ROR", "https://ror.org/abc123456")
+    graph = parse(render([publication()]))
+    faculty = rdflib.URIRef(f"{converter.FGDATA_NAMESPACE}faculty/fac-001")
+    department = graph.value(faculty, ORG.memberOf)
+    assert (
+        department,
+        FG_ORG_PARENT,
+        rdflib.URIRef("https://ror.org/abc123456"),
+    ) in graph
+
+
+def test_no_home_institution_leaves_the_department_unparented(monkeypatch):
+    monkeypatch.setenv("INSTITUTION_NAME", "")
+    graph = parse(render([publication()]))
+    faculty = rdflib.URIRef(f"{converter.FGDATA_NAMESPACE}faculty/fac-001")
+    department = graph.value(faculty, ORG.memberOf)
+    assert list(graph.objects(department, FG_ORG_PARENT)) == []
+
+
+def test_a_faculty_member_with_no_department_still_parses():
+    faculty = dict(FACULTY, department="")
+    graph = parse(render([publication()], faculty=faculty))
+    subject = rdflib.URIRef(f"{converter.FGDATA_NAMESPACE}faculty/fac-001")
+    assert list(graph.objects(subject, ORG.memberOf)) == []
+
+
+def test_an_author_with_no_affiliation_still_gets_an_authorship():
+    graph = parse(render([publication(coauthors=[coauthor()])]))
+    assert len(authorships_in(graph)) == 1
+
+
+def test_corresponding_author_is_flagged():
+    graph = parse(render([publication(coauthors=[coauthor(is_corresponding=True)])]))
+    flag = rdflib.URIRef(f"{converter.FG_NAMESPACE}isCorresponding")
+    assert bool(graph.value(authorships_in(graph)[0], flag))
+
+
+def test_a_hostile_institution_name_cannot_inject_triples():
+    hostile = 'Evil U" ; fg:injected "yes'
+    graph = parse(render([publication(coauthors=[
+        coauthor(institutions=[{"display_name": hostile}]),
+    ])]))
+    injected = rdflib.URIRef(f"{converter.FG_NAMESPACE}injected")
+    assert list(graph.objects(None, injected)) == []
+
+
+def test_a_hostile_ror_value_cannot_inject_an_iri():
+    graph = parse(render([publication(coauthors=[
+        coauthor(institutions=[{
+            "display_name": "Evil U",
+            "ror": "abc123456> . <http://evil> <http://evil> <http://evil",
+        }]),
+    ])]))
+    assert rdflib.URIRef("http://evil") not in set(graph.predicates(None, None))
+
+
+def test_large_authorship_batch_parses():
+    authors = [coauthor(name=f"Author {i}", position=i) for i in range(1, 501)]
+    graph = parse(render([publication(coauthors=authors)]))
+    assert len(authorships_in(graph)) == 500

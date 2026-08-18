@@ -46,7 +46,7 @@ Concerns 6 and 7 are partly satisfied already, the rest are not.
 The phases are ordered so that each one is useful on its own, and so that the
 cheap fixes that unblock the most visible request — collaboration — come first.
 
-### Phase 1 — Stop discarding data at the parser boundary
+### Phase 1 — Stop discarding data at the parser boundary — **done**
 
 No modeling decisions required; these are fields we already receive and throw away.
 
@@ -65,7 +65,7 @@ No modeling decisions required; these are fields we already receive and throw aw
 At the end of this phase the raw files and the parsed records carry everything
 needed for Phase 2, even though the graph shape has not changed much.
 
-### Phase 2 — Model organizations as first-class resources
+### Phase 2 — Model organizations as first-class resources — **done**
 
 This is the phase that answers "show that we work with MIT."
 
@@ -88,7 +88,7 @@ This is the phase that answers "show that we work with MIT."
    returns, per external institution, the count of works co-authored with our
    institution. This is the deliverable the feedback is actually asking for.
 
-### Phase 3 — Make reconciliation an explicit pipeline phase
+### Phase 3 — Make reconciliation an explicit pipeline phase — **done**, except the ROR API lookup
 
 This matches the "keep it per source, connect it later" strategy.
 

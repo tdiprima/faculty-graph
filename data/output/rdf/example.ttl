@@ -12,6 +12,7 @@
 @prefix bibo:   <http://purl.org/ontology/bibo/> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix prov:   <http://www.w3.org/ns/prov#> .
+@prefix org:    <http://www.w3.org/ns/org#> .
 @prefix fg:     <http://example.org/faculty-graph/> .
 @prefix fgdata: <http://example.org/faculty-graph/data/> .
 
@@ -99,3 +100,75 @@ fg:PubMed
 fg:OpenAlex
     a                   fg:DataSource ;
     rdfs:label          "OpenAlex" .
+
+
+# ── Organizations ───────────────────────────────────────────────────
+#
+# A ROR identifier is a globally resolvable IRI naming exactly one
+# organization, so it is used as the subject directly: two sources naming the
+# same institution converge on one node with no matching step. An organization
+# with no ROR gets a locally minted IRI, and fg:identifierKind says which of the
+# two a node is, so a reconciliation pass can find the local ones.
+
+<https://ror.org/abc123456>
+    a                   fg:Organization, org:Organization ;
+    rdfs:label          "Example University" ;
+    foaf:name           "Example University" ;
+    fg:rorId            <https://ror.org/abc123456> ;
+    fg:countryCode      "US" ;
+    fg:orgType          "education" ;
+    fg:identifierKind   "ror" .
+
+<https://ror.org/042nb2s44>
+    a                   fg:Organization, org:Organization ;
+    rdfs:label          "Massachusetts Institute of Technology" ;
+    foaf:name           "Massachusetts Institute of Technology" ;
+    fg:rorId            <https://ror.org/042nb2s44> ;
+    fg:countryCode      "US" ;
+    fg:identifierKind   "ror" .
+
+# ROR registers institutions, not their internal units, so a department is
+# always locally identified and hangs beneath its institution.
+<http://example.org/faculty-graph/data/org/name-psychoceramics>
+    a                   fg:Organization, org:Organization ;
+    rdfs:label          "Psychoceramics" ;
+    foaf:name           "Psychoceramics" ;
+    fg:identifierKind   "local" ;
+    org:subOrganizationOf <https://ror.org/abc123456> .
+
+# ── Authorship ──────────────────────────────────────────────────────
+#
+# An author's institution is a fact about that author on that paper, not a
+# standing fact about the person: people move, and a paper records where they
+# were at the time. Affiliation therefore hangs off the authorship, which is
+# what makes "which institutions produced this work together" a one-hop query.
+
+<http://example.org/faculty-graph/data/authorship/doi-10.1234-example-1-Josiah-Carberry>
+    a                   fg:Authorship ;
+    fg:work             <http://example.org/faculty-graph/data/work/doi-10.1234-example> ;
+    fg:author           <http://example.org/faculty-graph/data/faculty/fac-001> ;
+    fg:position         1 ;
+    fg:authorRole       "first" ;
+    fg:affiliatedWith   <https://ror.org/abc123456> .
+
+<http://example.org/faculty-graph/data/authorship/doi-10.1234-example-2-Alan-Turing>
+    a                   fg:Authorship ;
+    fg:work             <http://example.org/faculty-graph/data/work/doi-10.1234-example> ;
+    fg:author           <http://example.org/faculty-graph/data/person/orcid-0000-0002-1825-0097> ;
+    fg:position         2 ;
+    fg:isCorresponding  true ;
+    fg:affiliatedWith   <https://ror.org/042nb2s44> ;
+    # PubMed gives affiliation as one free-text line naming several
+    # organizations at once. Resolving it is reconciliation work, so the string
+    # is kept exactly as published until then.
+    fg:affiliationRaw   "Dept of Mathematics, Massachusetts Institute of Technology, Cambridge, MA, USA" .
+
+<http://example.org/faculty-graph/data/person/orcid-0000-0002-1825-0097>
+    a                   foaf:Person ;
+    foaf:name           "Alan Turing" ;
+    foaf:givenName      "Alan" ;
+    foaf:familyName     "Turing" ;
+    # "structured" means the source stated the parts separately; "display" means
+    # we split a rendered string and could be wrong.
+    fg:nameSource       "structured" ;
+    fg:orcidId          "0000-0002-1825-0097" .

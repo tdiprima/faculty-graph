@@ -10,12 +10,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
-from src.config import base_uri
+from src.config import base_uri, institution_name, institution_ror
 from src.identity import (
     group_publications,
     merge_group,
     normalize_doi,
     normalize_pmid,
+)
+from src.rdf_model.organizations import (
+    OrganizationRegistry,
+    build_organization,
+    department_organization,
+    name_key,
+    organization_from_institution,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,6 +40,8 @@ PREFIXES = f"""\
 @prefix bibo:   <http://purl.org/ontology/bibo/> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix prov:   <http://www.w3.org/ns/prov#> .
+@prefix org:    <http://www.w3.org/ns/org#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
 @prefix fg:     <{FG_NAMESPACE}> .
 @prefix fgdata: <{FGDATA_NAMESPACE}> .
 """
@@ -69,18 +78,78 @@ def escape_turtle_string(value):
 
 
 def build_work_uri(publication):
-    """Generate a URI for a publication based on DOI, PMID, or title.
+    """Generate the cross-source URI for a publication.
 
     Identifiers are normalized first: DOIs are case-insensitive, so the same
     work must not mint two IRIs because two sources cased its DOI differently.
     """
+    return build_data_iri("work", work_key_for(publication))
+
+
+def build_organization_uri(organization):
+    """Return the IRI that stands for this organization.
+
+    A ROR identifier is already a globally resolvable IRI naming exactly this
+    organization, so it is used as the subject directly. Anything else gets a
+    locally minted IRI, which says plainly that the identity is ours rather than
+    the registry's.
+    """
+    if organization.get("ror"):
+        return f"<{organization['ror']}>"
+    return build_data_iri("org", f"name-{sanitize_uri_part(name_key(organization['name']))}")
+
+
+def work_key_for(publication):
+    """Return the identifier fragment that names this work.
+
+    Shared by the cross-source work IRI and the per-source one so the two can
+    never disagree about which identifier a work is keyed on.
+    """
     doi = normalize_doi(publication.get("doi"))
     if doi:
-        return build_data_iri("work", f"doi-{sanitize_uri_part(doi)}")
+        return f"doi-{sanitize_uri_part(doi)}"
     pmid = normalize_pmid(publication.get("pmid"))
     if pmid:
-        return build_data_iri("work", f"pmid-{sanitize_uri_part(pmid)}")
-    return build_data_iri("work", f"title-{sanitize_uri_part(publication['title'][:80])}")
+        return f"pmid-{sanitize_uri_part(pmid)}"
+    return f"title-{sanitize_uri_part(publication['title'][:80])}"
+
+
+def build_source_work_uri(source, publication):
+    """Generate a work IRI scoped to the source that reported it.
+
+    The cross-source IRI from build_work_uri deliberately collapses records that
+    share an identifier. A per-source graph must not do that: it records what one
+    source said, on its own, so that linking it to another source's record is a
+    separate, reversible, reviewable assertion rather than a silent merge.
+    """
+    source_key = sanitize_uri_part(str(source or "unknown").lower())
+    return build_data_iri("work", source_key, work_key_for(publication))
+
+
+def build_authorship_uri(publication, coauthor, work_uri):
+    """Return the IRI for one author's contribution to one work.
+
+    Keyed on the work and the author's position, which is what makes an
+    authorship unique: the same person may appear twice on a work under
+    different affiliations.
+    """
+    work_key = work_uri.strip("<>").rsplit("/", 1)[-1]
+    position = coauthor.get("position") or 0
+    person_key = sanitize_uri_part(str(coauthor.get("name", ""))[:60])
+    return build_data_iri("authorship", f"{work_key}-{position}-{person_key}")
+
+
+def build_person_uri(coauthor):
+    """Return the IRI for a co-author.
+
+    ORCID is used when the source supplied one: it identifies a person globally,
+    where a name collides between different people and splits one person across
+    spellings. Reconciling the name-keyed nodes is a later phase.
+    """
+    orcid = str(coauthor.get("orcid") or "").strip()
+    if orcid:
+        return build_data_iri("person", f"orcid-{sanitize_uri_part(orcid)}")
+    return build_data_iri("person", sanitize_uri_part(str(coauthor.get("name", ""))[:60]))
 
 
 def build_assertion_uri(faculty_id, source, publication):
@@ -119,6 +188,50 @@ def format_integer_literal(value):
         return None
 
 
+def home_organization():
+    """Build the organization record for the institution running this pipeline.
+
+    Returns None when INSTITUTION_NAME is empty, which is the documented way of
+    saying "do not constrain by institution". Departments then stand alone
+    rather than being parented to a guess.
+    """
+    name = institution_name()
+    if not name:
+        return None
+    return build_organization(name, ror=institution_ror())
+
+
+def organization_to_turtle(organization, parent_uri=None):
+    """Generate Turtle triples describing one organization."""
+    lines = [
+        build_organization_uri(organization),
+        f"    a                   fg:Organization, org:Organization ;",
+        f'    rdfs:label          "{escape_turtle_string(organization["name"])}" ;',
+        f'    foaf:name           "{escape_turtle_string(organization["name"])}" ;',
+    ]
+
+    if organization.get("ror"):
+        lines.append(f'    fg:rorId            <{organization["ror"]}> ;')
+
+    if organization.get("country_code"):
+        lines.append(
+            f'    fg:countryCode      "{escape_turtle_string(str(organization["country_code"]))}" ;'
+        )
+
+    if organization.get("type"):
+        lines.append(
+            f'    fg:orgType          "{escape_turtle_string(str(organization["type"]))}" ;'
+        )
+
+    lines.append(f'    fg:identifierKind   "{organization["kind"]}" ;')
+
+    if parent_uri:
+        lines.append(f"    org:subOrganizationOf {parent_uri} ;")
+
+    lines[-1] = lines[-1].rstrip(" ;") + " ."
+    return "\n".join(lines)
+
+
 def _page_lines(pages):
     """Emit the page range as printed, plus its endpoints when they parse out."""
     if not pages:
@@ -137,8 +250,14 @@ def _page_lines(pages):
     return lines
 
 
-def faculty_to_turtle(faculty):
-    """Generate Turtle triples for a faculty member."""
+def faculty_to_turtle(faculty, department_uri=None):
+    """Generate Turtle triples for a faculty member.
+
+    The department string the seed list supplied is kept alongside the link to
+    the department resource. The string is what the source said; the link is
+    what we concluded it meant, and losing either would make the conclusion
+    unauditable.
+    """
     faculty_id = faculty["faculty_id"]
     lines = [
         build_faculty_uri(faculty_id),
@@ -146,15 +265,25 @@ def faculty_to_turtle(faculty):
         f'    foaf:name           "{escape_turtle_string(faculty["full_name"])}" ;',
         f'    fg:facultyId        "{escape_turtle_string(faculty_id)}" ;',
         f'    fg:department       "{escape_turtle_string(faculty["department"])}" ;',
-        f'    fg:orcidId          "{escape_turtle_string(faculty["orcid"])}" ;',
-        f'    foaf:mbox           <mailto:{quote(faculty["email"], safe="@.")}> .',
     ]
+
+    if department_uri:
+        lines.append(f"    org:memberOf        {department_uri} ;")
+
+    lines.append(f'    fg:orcidId          "{escape_turtle_string(faculty["orcid"])}" ;')
+    lines.append(f'    foaf:mbox           <mailto:{quote(faculty["email"], safe="@.")}> .')
     return "\n".join(lines)
 
 
-def publication_to_turtle(publication):
-    """Generate Turtle triples for a single publication."""
-    work_uri = build_work_uri(publication)
+def publication_to_turtle(publication, work_uri=None):
+    """Generate Turtle triples for a single publication.
+
+    work_uri is supplied by the per-source writer, which keys works by source so
+    that two sources describing one article stay two nodes until something links
+    them.
+    """
+    if work_uri is None:
+        work_uri = build_work_uri(publication)
     lines = [
         f"{work_uri}",
         f"    a                   bibo:AcademicArticle ;",
@@ -257,80 +386,114 @@ def assertion_to_turtle(faculty_id, publication, harvest_timestamp, work_uri=Non
     return "\n".join(lines)
 
 
-def _affiliation_lines(coauthor):
-    """Emit each affiliation exactly as its source stated it.
+def _coauthor_organizations(coauthor, registry):
+    """Register every organization this authorship names, returning their IRIs."""
+    uris = []
+    for institution in coauthor.get("institutions", []):
+        organization = registry.add(organization_from_institution(institution))
+        if not organization:
+            continue
+        uri = build_organization_uri(organization)
+        if uri not in uris:
+            uris.append(uri)
+    return uris
 
-    Phase 1 keeps affiliations as raw source values rather than resolving them to
-    organization resources: a PubMed affiliation is free text, an OpenAlex one
-    carries a ROR identifier, and deciding that the two name the same institution
-    is reconciliation work, not parsing work. Both forms are recorded so that
-    later phase has something to reconcile.
+
+def person_to_turtle(coauthor):
+    """Generate Turtle triples describing one co-author as a person."""
+    person_uri = build_person_uri(coauthor)
+    lines = [
+        f"{person_uri}",
+        f"    a                   foaf:Person ;",
+        f'    foaf:name           "{escape_turtle_string(coauthor["name"])}" ;',
+    ]
+
+    if coauthor.get("given_name"):
+        lines.append(
+            f'    foaf:givenName      "{escape_turtle_string(str(coauthor["given_name"]))}" ;'
+        )
+    if coauthor.get("family_name"):
+        lines.append(
+            f'    foaf:familyName     "{escape_turtle_string(str(coauthor["family_name"]))}" ;'
+        )
+    if coauthor.get("name_source"):
+        lines.append(
+            f'    fg:nameSource       "{escape_turtle_string(str(coauthor["name_source"]))}" ;'
+        )
+    if coauthor.get("orcid"):
+        lines.append(
+            f'    fg:orcidId          "{escape_turtle_string(str(coauthor["orcid"]))}" ;'
+        )
+
+    lines[-1] = lines[-1].rstrip(" ;") + " ."
+    return "\n".join(lines)
+
+
+def authorship_to_turtle(publication, coauthor, work_uri, registry):
+    """Generate Turtle triples for one author's contribution to one work.
+
+    An author's institution is a fact about that author on that paper, not a
+    standing fact about the person, so affiliation hangs off the authorship
+    rather than off the person. This is what makes "which institutions produced
+    this work together" answerable in one hop.
     """
-    lines = []
+    authorship_uri = build_authorship_uri(publication, coauthor, work_uri)
+    person_uri = build_person_uri(coauthor)
 
+    lines = [
+        f"{authorship_uri}",
+        f"    a                   fg:Authorship ;",
+        f"    fg:work             {work_uri} ;",
+        f"    fg:author           {person_uri} ;",
+    ]
+
+    position = format_integer_literal(coauthor.get("position"))
+    if position is not None:
+        lines.append(f"    fg:position         {position} ;")
+
+    if coauthor.get("author_position"):
+        lines.append(
+            f'    fg:authorRole       "{escape_turtle_string(str(coauthor["author_position"]))}" ;'
+        )
+
+    if coauthor.get("is_corresponding"):
+        lines.append(f"    fg:isCorresponding  true ;")
+
+    for organization_uri in _coauthor_organizations(coauthor, registry):
+        lines.append(f"    fg:affiliatedWith   {organization_uri} ;")
+
+    # Free-text affiliation lines name several organizations at once, so they
+    # stay as unresolved source strings for the reconciliation phase to read.
     for affiliation in coauthor.get("affiliations", []):
         lines.append(
             f'    fg:affiliationRaw   "{escape_turtle_string(str(affiliation))}" ;'
         )
 
-    for institution in coauthor.get("institutions", []):
-        if isinstance(institution, str):
-            lines.append(
-                f'    fg:affiliationRaw   "{escape_turtle_string(institution)}" ;'
-            )
-            continue
-
-        display_name = institution.get("display_name")
-        if not display_name:
-            continue
-        parts = [f'fg:orgName "{escape_turtle_string(display_name)}"']
-        if institution.get("ror"):
-            parts.append(f'fg:rorId <{escape_turtle_string(str(institution["ror"]))}>')
-        if institution.get("country_code"):
-            parts.append(
-                f'fg:countryCode "{escape_turtle_string(str(institution["country_code"]))}"'
-            )
-        lines.append(f'    fg:affiliation      [ {" ; ".join(parts)} ] ;')
-
-    return lines
+    lines[-1] = lines[-1].rstrip(" ;") + " ."
+    return "\n".join(lines)
 
 
-def coauthor_to_turtle(publication):
-    """Generate Turtle triples for coauthor relationships."""
+def coauthor_to_turtle(publication, registry=None, work_uri=None):
+    """Generate Turtle triples for a work's authors and their affiliations."""
     coauthors = publication.get("coauthors", [])
     if not coauthors:
         return ""
 
-    work_uri = build_work_uri(publication)
-    lines = []
-    for coauthor in coauthors:
-        name = coauthor.get("name", "")
-        if not name:
-            continue
-        coauthor_uri = build_data_iri("person", sanitize_uri_part(name[:60]))
-        lines.append(f"{coauthor_uri}")
-        lines.append(f"    a                   foaf:Person ;")
-        lines.append(f'    foaf:name           "{escape_turtle_string(name)}" ;')
-        if coauthor.get("given_name"):
-            lines.append(
-                f'    foaf:givenName      "{escape_turtle_string(str(coauthor["given_name"]))}" ;'
-            )
-        if coauthor.get("family_name"):
-            lines.append(
-                f'    foaf:familyName     "{escape_turtle_string(str(coauthor["family_name"]))}" ;'
-            )
-        if coauthor.get("name_source"):
-            lines.append(
-                f'    fg:nameSource       "{escape_turtle_string(str(coauthor["name_source"]))}" ;'
-            )
-        if coauthor.get("orcid"):
-            lines.append(f'    fg:orcidId          "{escape_turtle_string(str(coauthor["orcid"]))}" ;')
-        lines.extend(_affiliation_lines(coauthor))
-        lines[-1] = lines[-1].rstrip(" ;") + " ."
-        lines.append("")
-        lines.append(f"{work_uri} dcterms:creator {coauthor_uri} .")
+    if registry is None:
+        registry = OrganizationRegistry()
 
-    return "\n".join(lines)
+    if work_uri is None:
+        work_uri = build_work_uri(publication)
+    sections = []
+    for coauthor in coauthors:
+        if not coauthor.get("name"):
+            continue
+        person_uri = build_person_uri(coauthor)
+        sections.append(person_to_turtle(coauthor))
+        sections.append(f"{work_uri} dcterms:creator {person_uri} .")
+        sections.append(authorship_to_turtle(publication, coauthor, work_uri, registry))
+
+    return "\n\n".join(sections)
 
 
 def convert_faculty_to_rdf(faculty, publications, harvest_timestamp):
@@ -341,33 +504,140 @@ def convert_faculty_to_rdf(faculty, publications, harvest_timestamp):
     works from the graph without erasing which source claimed what.
     """
     faculty_id = faculty["faculty_id"]
+    registry = OrganizationRegistry()
+
+    home = registry.add(home_organization())
+    home_uri = build_organization_uri(home) if home else None
+
+    department = registry.add(department_organization(faculty.get("department")))
+    department_uri = build_organization_uri(department) if department else None
+
     sections = []
     sections.append(f"# ── Faculty: {faculty['full_name']} ──")
-    sections.append(faculty_to_turtle(faculty))
+    sections.append(faculty_to_turtle(faculty, department_uri))
 
     groups = group_publications(publications)
+    work_sections = []
     for group in groups:
         merged_work = merge_group(group)
         work_uri = build_work_uri(merged_work)
 
-        sections.append(publication_to_turtle(merged_work))
+        work_sections.append(publication_to_turtle(merged_work))
 
-        coauthor_ttl = coauthor_to_turtle(merged_work)
+        coauthor_ttl = coauthor_to_turtle(merged_work, registry)
         if coauthor_ttl:
-            sections.append(coauthor_ttl)
+            work_sections.append(coauthor_ttl)
 
         for pub in group:
-            sections.append(
+            work_sections.append(
                 assertion_to_turtle(faculty_id, pub, harvest_timestamp, work_uri)
             )
 
+    # Organizations are emitted after the works that referenced them, because
+    # the registry only knows the full set once every authorship has been read.
+    sections.append("# ── Organizations ──")
+    for organization in registry.all():
+        parent_uri = home_uri if organization is department else None
+        sections.append(organization_to_turtle(organization, parent_uri))
+
+    sections.extend(work_sections)
+
     logger.info(
-        "Generated RDF for %s: %d works from %d assertions",
+        "Generated RDF for %s: %d works from %d assertions, %d organizations",
         faculty["full_name"],
         len(groups),
         len(publications),
+        len(registry),
     )
     return "\n\n".join(sections)
+
+
+def convert_source_to_rdf(faculty, publications, source, harvest_timestamp):
+    """Convert one source's records for one faculty member, without merging.
+
+    This is the per-source view: every record this source reported becomes its
+    own work node, keyed by source, even when two records share a DOI. Nothing
+    here decides that two sources describe the same work — that judgement is the
+    reconciliation phase's, and keeping it out of here is what makes it
+    reversible.
+    """
+    faculty_id = faculty["faculty_id"]
+    registry = OrganizationRegistry()
+
+    home = registry.add(home_organization())
+    home_uri = build_organization_uri(home) if home else None
+
+    department = registry.add(department_organization(faculty.get("department")))
+    department_uri = build_organization_uri(department) if department else None
+
+    sections = [f"# ── {source}: {faculty['full_name']} ──"]
+    sections.append(faculty_to_turtle(faculty, department_uri))
+
+    work_sections = []
+    for publication in publications:
+        work_uri = build_source_work_uri(source, publication)
+
+        work_sections.append(publication_to_turtle(publication, work_uri))
+        work_sections.append(
+            f"{work_uri} fg:reportedBy       fg:{sanitize_uri_part(source)} ."
+        )
+
+        coauthor_ttl = coauthor_to_turtle(publication, registry, work_uri)
+        if coauthor_ttl:
+            work_sections.append(coauthor_ttl)
+
+        work_sections.append(
+            assertion_to_turtle(faculty_id, publication, harvest_timestamp, work_uri)
+        )
+
+    sections.append("# ── Organizations ──")
+    for organization in registry.all():
+        parent_uri = home_uri if organization is department else None
+        sections.append(organization_to_turtle(organization, parent_uri))
+
+    sections.extend(work_sections)
+    return "\n\n".join(sections)
+
+
+def convert_by_source(all_results, output_dir, review_manager=None):
+    """Write one unmerged Turtle graph per source.
+
+    Returns {source: path}. These graphs are the harvest of record: each says
+    only what one source reported, so a bad reconciliation is undone by dropping
+    one links file rather than by re-harvesting.
+    """
+    output_dir = Path(output_dir) / "by-source"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    harvest_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+    by_source = {}
+    for faculty, publications in all_results:
+        for publication in publications:
+            source = publication.get("source", "unknown")
+            by_source.setdefault(source, {}).setdefault(
+                faculty["faculty_id"], {"faculty": faculty, "publications": []}
+            )["publications"].append(publication)
+
+    written = {}
+    for source, faculty_records in by_source.items():
+        sections = [PREFIXES]
+        for faculty_id, data in faculty_records.items():
+            publications = data["publications"]
+            if review_manager:
+                publications = review_manager.apply_reviews(faculty_id, publications)
+            sections.append(
+                convert_source_to_rdf(
+                    data["faculty"], publications, source, harvest_timestamp
+                )
+            )
+
+        source_path = output_dir / f"{sanitize_uri_part(source.lower())}.ttl"
+        with open(source_path, "w", encoding="utf-8") as outfile:
+            outfile.write("\n\n".join(sections) + "\n")
+        logger.info("Wrote per-source RDF: %s", source_path)
+        written[source] = source_path
+
+    return written
 
 
 def convert_all_to_rdf(all_results, output_dir, review_manager=None):
@@ -408,4 +678,6 @@ def convert_all_to_rdf(all_results, output_dir, review_manager=None):
     with open(combined_path, "w", encoding="utf-8") as outfile:
         outfile.write("\n\n".join(all_sections) + "\n")
     logger.info("Wrote combined RDF: %s", combined_path)
+
+    convert_by_source(all_results, output_dir, review_manager)
     return combined_path

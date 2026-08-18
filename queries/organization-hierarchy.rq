@@ -1,0 +1,29 @@
+# The organizational tree: which units sit under which institution, and who
+# belongs to them.
+#
+# identifierKind says where each node's identity came from: "ror" means the
+# Research Organization Registry names it, "local" means we minted the IRI from
+# a name and it is a candidate for reconciliation.
+
+PREFIX fg:   <http://example.org/faculty-graph/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX org:  <http://www.w3.org/ns/org#>
+
+SELECT ?unit_name ?identifier_kind ?parent_name ?member_name
+WHERE {
+    ?unit a org:Organization ;
+          rdfs:label ?unit_name ;
+          fg:identifierKind ?identifier_kind .
+
+    OPTIONAL {
+        ?unit org:subOrganizationOf ?parent .
+        ?parent rdfs:label ?parent_name .
+    }
+
+    OPTIONAL {
+        ?member org:memberOf ?unit ;
+                foaf:name ?member_name .
+    }
+}
+ORDER BY ?parent_name ?unit_name ?member_name

@@ -1,0 +1,24 @@
+# Cross-source and organization links the pipeline is not sure about.
+#
+# Every link the reconciliation phase made carries the method and confidence
+# behind it. This lists the ones flagged for a human, strongest evidence last,
+# so review effort goes to the shakiest links first.
+
+PREFIX fg:   <http://example.org/faculty-graph/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?record ?matched_to ?method ?confidence ?source ?reconciled_at
+WHERE {
+    ?match a fg:MatchAssertion ;
+           fg:matchedRecord ?record ;
+           fg:matchedTo ?matched_to ;
+           fg:matchMethod ?method ;
+           fg:matchConfidence ?confidence ;
+           fg:needsHumanReview true .
+
+    OPTIONAL { ?match fg:source ?source }
+    OPTIONAL { ?match fg:reconciledAt ?reconciled_at }
+}
+ORDER BY ASC(?confidence) ?record
+LIMIT 200

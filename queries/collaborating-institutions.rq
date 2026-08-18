@@ -1,0 +1,41 @@
+# Which outside institutions do our researchers publish with, and how often.
+#
+# Counts a collaboration when one authorship on a work is affiliated with our
+# institution and another authorship on the same work is affiliated with a
+# different organization. Rejected assertions are excluded, so a match a human
+# has thrown out never inflates a collaboration count.
+#
+# Set ?home to your own institution's ROR IRI before running.
+
+PREFIX fg:     <http://example.org/faculty-graph/>
+PREFIX fgdata: <http://example.org/faculty-graph/data/>
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+PREFIX rdfs:   <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX org:    <http://www.w3.org/ns/org#>
+
+SELECT ?partner_name ?partner_ror (COUNT(DISTINCT ?work) AS ?shared_works)
+WHERE {
+    VALUES ?home { <https://ror.org/abc123456> }
+
+    ?home_authorship a fg:Authorship ;
+                     fg:work ?work ;
+                     fg:affiliatedWith ?home .
+
+    ?partner_authorship a fg:Authorship ;
+                        fg:work ?work ;
+                        fg:affiliatedWith ?partner .
+
+    ?partner rdfs:label ?partner_name .
+    OPTIONAL { ?partner fg:rorId ?partner_ror }
+
+    FILTER (?partner != ?home)
+
+    FILTER NOT EXISTS {
+        ?assertion a fg:PublicationAssertion ;
+                   fg:work ?work ;
+                   fg:status fg:rejected .
+    }
+}
+GROUP BY ?partner_name ?partner_ror
+ORDER BY DESC(?shared_works)
+LIMIT 100

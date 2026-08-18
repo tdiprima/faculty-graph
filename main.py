@@ -8,6 +8,7 @@ Usage:
     python3 main.py --source openalex   # Run OpenAlex only
     python3 main.py --preview           # Generate HTML previews (standalone)
     python3 main.py --disambiguate      # Run LLM disambiguation (standalone)
+    python3 main.py --reconcile         # Link records across sources (standalone)
 """
 
 import argparse
@@ -87,6 +88,48 @@ def run_harvest(sources, paths):
     return all_results
 
 
+def run_reconcile(paths):
+    """Link records that different sources reported separately.
+
+    Reads the harvest already on disk and writes only links, into their own
+    graph. Nothing this stage produces overwrites what a source said, so a bad
+    run is undone by deleting one file.
+    """
+    logger.info("=== Reconciling Sources ===")
+    from src.harvest_orcid.client import load_seed_faculty
+    from src.rdf_model.organizations import OrganizationRegistry
+    from src.reconcile.loader import collect_organizations, load_publications
+    from src.reconcile.writer import write_reconciliation
+
+    faculty_list = load_seed_faculty(paths["seed_csv"])
+    if not faculty_list:
+        logger.error("No faculty found in %s", paths["seed_csv"])
+        return None
+
+    publications_by_faculty = {
+        faculty["faculty_id"]: load_publications(faculty, paths)
+        for faculty in faculty_list
+    }
+
+    all_publications = [
+        publication
+        for publications in publications_by_faculty.values()
+        for publication in publications
+    ]
+    if not all_publications:
+        logger.warning(
+            "No harvested records found under %s. Run a harvest first.",
+            paths["raw_base"],
+        )
+        return None
+
+    registry = collect_organizations(
+        faculty_list, publications_by_faculty, OrganizationRegistry()
+    )
+
+    return write_reconciliation(all_publications, registry.all(), paths["rdf_output"])
+
+
 def run_preview(paths):
     """Generate HTML preview pages."""
     logger.info("=== Generating Previews ===")
@@ -136,7 +179,7 @@ def parse_args():
     parser.add_argument(
         "--full",
         action="store_true",
-        help="Run everything: harvest (all sources unless --source given), disambiguate, generate previews.",
+        help="Run everything: harvest (all sources unless --source given), disambiguate, reconcile, generate previews.",
     )
     parser.add_argument(
         "--preview",
@@ -147,6 +190,11 @@ def parse_args():
         "--disambiguate",
         action="store_true",
         help="Run LLM disambiguation on candidate matches (standalone or with --full).",
+    )
+    parser.add_argument(
+        "--reconcile",
+        action="store_true",
+        help="Link records across sources into their own graph (standalone or with --full).",
     )
     return parser.parse_args()
 
@@ -175,32 +223,38 @@ def main():
         sys.exit(1)
 
 
+def run_post_harvest_stages(args, paths):
+    """Run whichever post-harvest stages were requested, in dependency order.
+
+    Reconciliation runs before previews so a preview reflects the links this run
+    produced rather than the previous run's.
+    """
+    if args.disambiguate:
+        run_disambiguate(paths)
+    if args.reconcile:
+        run_reconcile(paths)
+    if args.preview:
+        run_preview(paths)
+
+
 def run_pipeline(args, paths):
     """Dispatch to the requested pipeline stages."""
+    sources = args.source or ["orcid", "pubmed", "openalex"]
+
     if args.full:
-        sources = args.source or ["orcid", "pubmed", "openalex"]
         results = run_harvest(sources, paths)
         if not results:
             sys.exit(1)
         run_disambiguate(paths)
+        run_reconcile(paths)
         run_preview(paths)
         logger.info("=== Full pipeline complete ===")
         return
 
-    if args.preview and not args.disambiguate:
-        run_preview(paths)
+    if args.preview or args.disambiguate or args.reconcile:
+        run_post_harvest_stages(args, paths)
         return
 
-    if args.disambiguate and not args.preview:
-        run_disambiguate(paths)
-        return
-
-    if args.preview and args.disambiguate:
-        run_disambiguate(paths)
-        run_preview(paths)
-        return
-
-    sources = args.source or ["orcid", "pubmed", "openalex"]
     results = run_harvest(sources, paths)
     if not results:
         sys.exit(1)

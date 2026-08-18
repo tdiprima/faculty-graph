@@ -1,0 +1,18 @@
+# How much each pair of sources overlaps, measured from the reconciliation
+# links rather than guessed from the merged graph.
+#
+# Reads only fg:MatchAssertion, so it reports what reconciliation concluded and
+# on what basis — a pair agreeing mostly on titles is weaker evidence than a
+# pair agreeing on DOIs, and this shows the difference.
+
+PREFIX fg: <http://example.org/faculty-graph/>
+
+SELECT ?method (COUNT(DISTINCT ?canonical) AS ?linked_works)
+WHERE {
+    ?match a fg:MatchAssertion ;
+           fg:matchedTo ?canonical ;
+           fg:matchMethod ?method ;
+           fg:source ?source .
+}
+GROUP BY ?method
+ORDER BY DESC(?linked_works)

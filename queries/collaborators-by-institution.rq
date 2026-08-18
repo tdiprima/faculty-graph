@@ -1,0 +1,37 @@
+# Who collaborates with a named outside institution, and on which works.
+#
+# The drill-down behind collaborating-institutions.rq: once a partner
+# institution stands out, this lists the people and papers behind the count.
+#
+# Set ?partner to the institution's ROR IRI before running.
+
+PREFIX fg:     <http://example.org/faculty-graph/>
+PREFIX fgdata: <http://example.org/faculty-graph/data/>
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX rdfs:   <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?our_author_name ?partner_author_name ?title ?date
+WHERE {
+    VALUES ?home    { <https://ror.org/abc123456> }
+    VALUES ?partner { <https://ror.org/042nb2s44> }
+
+    ?home_authorship a fg:Authorship ;
+                     fg:work ?work ;
+                     fg:author ?our_author ;
+                     fg:affiliatedWith ?home .
+
+    ?partner_authorship a fg:Authorship ;
+                        fg:work ?work ;
+                        fg:author ?partner_author ;
+                        fg:affiliatedWith ?partner .
+
+    ?our_author foaf:name ?our_author_name .
+    ?partner_author foaf:name ?partner_author_name .
+    ?work dcterms:title ?title .
+    OPTIONAL { ?work dcterms:date ?date }
+
+    FILTER (?our_author != ?partner_author)
+}
+ORDER BY DESC(?date) ?title
+LIMIT 200
