@@ -9,6 +9,7 @@ from urllib.parse import quote_plus, urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
+from src.config import institution_affiliation
 from src.harvest_pubmed.parser import parse_pubmed_xml
 from src.provenance import SEARCH_METHOD_NAME, SEARCH_METHOD_ORCID, tag_publications
 
@@ -62,8 +63,14 @@ def search_by_orcid(orcid_id):
     return pmids
 
 
-def search_by_name(full_name, affiliation="Example University"):
-    """Search PubMed by author name and affiliation. Returns list of PMIDs."""
+def search_by_name(full_name, affiliation=None):
+    """Search PubMed by author name and affiliation. Returns list of PMIDs.
+
+    affiliation defaults to the configured INSTITUTION_AFFILIATION. Pass an
+    empty string to search by author name alone.
+    """
+    if affiliation is None:
+        affiliation = institution_affiliation()
     parts = full_name.strip().split()
     if len(parts) < 2:
         logger.warning("Cannot parse name for PubMed search: %s", full_name)
@@ -71,7 +78,9 @@ def search_by_name(full_name, affiliation="Example University"):
 
     last_name = parts[-1]
     first_name = parts[0]
-    term = f"{last_name} {first_name}[author] AND {affiliation}[affiliation]"
+    term = f"{last_name} {first_name}[author]"
+    if affiliation:
+        term += f" AND {affiliation}[affiliation]"
 
     params = _api_params()
     params.update({

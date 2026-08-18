@@ -17,12 +17,12 @@ def test_locates_orcid_by_id_and_openalex_by_faculty_id(raw_base, faculty_with_o
     fixtures.write_json(
         raw_base / "orcid" / f"{faculty_with_orcid['orcid']}.json", fixtures.orcid_works([])
     )
-    fixtures.write_json(raw_base / "openalex" / "bmi-001.json", fixtures.openalex_works([]))
+    fixtures.write_json(raw_base / "openalex" / "fac-001.json", fixtures.openalex_works([]))
 
     located = preview._locate_raw_files(faculty_with_orcid, raw_base)
 
     assert located["orcid"].name == f"{faculty_with_orcid['orcid']}.json"
-    assert located["openalex"].name == "bmi-001.json"
+    assert located["openalex"].name == "fac-001.json"
 
 
 def test_absent_sources_are_omitted(raw_base, faculty_with_orcid):
@@ -42,7 +42,7 @@ def test_publications_are_deduplicated_by_doi(raw_base, faculty_with_orcid):
         fixtures.orcid_works([shared]),
     )
     fixtures.write_json(
-        raw_base / "openalex" / "bmi-001.json",
+        raw_base / "openalex" / "fac-001.json",
         fixtures.openalex_works([{"title": "Shared work", "doi": "10.1/shared"}]),
     )
 
@@ -68,7 +68,7 @@ def test_publications_without_dois_are_all_kept(raw_base, faculty_with_orcid):
 
 def test_publications_are_sorted_newest_first(raw_base, faculty_with_orcid):
     fixtures.write_json(
-        raw_base / "openalex" / "bmi-001.json",
+        raw_base / "openalex" / "fac-001.json",
         fixtures.openalex_works([
             {"title": "Old", "doi": "10.1/a", "date": "2001-01-01"},
             {"title": "New", "doi": "10.1/b", "date": "2021-01-01"},
@@ -84,7 +84,7 @@ def test_publications_are_sorted_newest_first(raw_base, faculty_with_orcid):
 
 
 def test_malformed_raw_file_is_skipped_not_fatal(raw_base, faculty_with_orcid, caplog):
-    fixtures.write_text(raw_base / "openalex" / "bmi-001.json", "{ truncated")
+    fixtures.write_text(raw_base / "openalex" / "fac-001.json", "{ truncated")
     fixtures.write_json(
         raw_base / "orcid" / f"{faculty_with_orcid['orcid']}.json",
         fixtures.orcid_works([{"title": "Still here", "doi": "10.1/a"}]),
@@ -184,8 +184,8 @@ def test_generate_all_previews_writes_one_page_per_faculty(
     tmp_path, raw_base, seed_file
 ):
     rows = [
-        ("bmi-001", "Ada Lovelace", "BMI", "0000-0002-1825-0097", "ada@example.edu"),
-        ("bmi-002", "Grace Hopper", "BMI", "", "grace@example.edu"),
+        ("fac-001", "Ada Lovelace", "Psychoceramics", "0000-0002-1825-0097", "ada@example.edu"),
+        ("fac-002", "Grace Hopper", "Psychoceramics", "", "grace@example.edu"),
     ]
     fixtures.write_json(
         raw_base / "orcid" / "0000-0002-1825-0097.json",
@@ -195,9 +195,9 @@ def test_generate_all_previews_writes_one_page_per_faculty(
 
     preview.generate_all_previews(seed_file(rows), raw_base, output_dir)
 
-    assert (output_dir / "bmi-001.html").exists()
-    assert (output_dir / "bmi-002.html").exists()
-    assert "A work" in (output_dir / "bmi-001.html").read_text(encoding="utf-8")
+    assert (output_dir / "fac-001.html").exists()
+    assert (output_dir / "fac-002.html").exists()
+    assert "A work" in (output_dir / "fac-001.html").read_text(encoding="utf-8")
 
 
 def test_generate_all_previews_never_writes_into_raw(tmp_path, raw_base, seed_file):
@@ -206,7 +206,7 @@ def test_generate_all_previews_never_writes_into_raw(tmp_path, raw_base, seed_fi
         raw_base / "orcid" / "0000-0002-1825-0097.json",
         fixtures.orcid_works([{"title": "A work", "doi": "10.1/a", "year": "2020"}]),
     )
-    rows = [("bmi-001", "Ada Lovelace", "BMI", "0000-0002-1825-0097", "ada@example.edu")]
+    rows = [("fac-001", "Ada Lovelace", "Psychoceramics", "0000-0002-1825-0097", "ada@example.edu")]
     before = {p: p.stat().st_mtime_ns for p in raw_base.rglob("*") if p.is_file()}
 
     preview.generate_all_previews(seed_file(rows), raw_base, tmp_path / "previews")

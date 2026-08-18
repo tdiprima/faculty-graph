@@ -42,7 +42,7 @@ def test_malformed_orcid_json_is_reported_not_raised(raw_base, faculty_with_orci
 def test_pubmed_name_search_files_are_candidates(raw_base, faculty_with_orcid):
     """Regression: these are .xml, and the old glob only matched .json."""
     fixtures.write_text(
-        raw_base / "pubmed" / "bmi-001-name.xml",
+        raw_base / "pubmed" / "fac-001-name.xml",
         fixtures.pubmed_xml([{"title": "Maybe theirs", "pmid": "1", "year": "2021"}]),
     )
 
@@ -53,7 +53,7 @@ def test_pubmed_name_search_files_are_candidates(raw_base, faculty_with_orcid):
 
 def test_pubmed_orcid_search_files_are_authoritative(raw_base, faculty_with_orcid):
     fixtures.write_text(
-        raw_base / "pubmed" / "bmi-001-orcid.xml",
+        raw_base / "pubmed" / "fac-001-orcid.xml",
         fixtures.pubmed_xml([{"title": "Definitely theirs", "pmid": "2", "year": "2021"}]),
     )
 
@@ -64,11 +64,11 @@ def test_pubmed_orcid_search_files_are_authoritative(raw_base, faculty_with_orci
 
 def test_both_pubmed_search_methods_load_together(raw_base, faculty_with_orcid):
     fixtures.write_text(
-        raw_base / "pubmed" / "bmi-001-orcid.xml",
+        raw_base / "pubmed" / "fac-001-orcid.xml",
         fixtures.pubmed_xml([{"title": "Sure", "pmid": "1", "year": "2021"}]),
     )
     fixtures.write_text(
-        raw_base / "pubmed" / "bmi-001-name.xml",
+        raw_base / "pubmed" / "fac-001-name.xml",
         fixtures.pubmed_xml([{"title": "Maybe", "pmid": "2", "year": "2021"}]),
     )
 
@@ -80,7 +80,7 @@ def test_both_pubmed_search_methods_load_together(raw_base, faculty_with_orcid):
 
 def test_openalex_is_authoritative_when_the_faculty_has_an_orcid(raw_base, faculty_with_orcid):
     fixtures.write_json(
-        raw_base / "openalex" / "bmi-001.json",
+        raw_base / "openalex" / "fac-001.json",
         fixtures.openalex_works([{"title": "Work", "doi": "10.1/a", "date": "2020-01-01"}]),
     )
 
@@ -91,7 +91,7 @@ def test_openalex_is_authoritative_when_the_faculty_has_an_orcid(raw_base, facul
 
 def test_openalex_is_candidate_without_an_orcid(raw_base, faculty_without_orcid):
     fixtures.write_json(
-        raw_base / "openalex" / "bmi-002.json",
+        raw_base / "openalex" / "fac-002.json",
         fixtures.openalex_works([{"title": "Work", "doi": "10.1/a", "date": "2020-01-01"}]),
     )
 
@@ -102,15 +102,15 @@ def test_openalex_is_candidate_without_an_orcid(raw_base, faculty_without_orcid)
 
 def test_load_candidates_returns_only_candidates(raw_base, faculty_with_orcid):
     fixtures.write_text(
-        raw_base / "pubmed" / "bmi-001-orcid.xml",
+        raw_base / "pubmed" / "fac-001-orcid.xml",
         fixtures.pubmed_xml([{"title": "Authoritative", "pmid": "1", "year": "2021"}]),
     )
     fixtures.write_text(
-        raw_base / "pubmed" / "bmi-001-name.xml",
+        raw_base / "pubmed" / "fac-001-name.xml",
         fixtures.pubmed_xml([{"title": "Candidate", "pmid": "2", "year": "2021"}]),
     )
     fixtures.write_json(
-        raw_base / "openalex" / "bmi-001.json",
+        raw_base / "openalex" / "fac-001.json",
         fixtures.openalex_works([{"title": "Also authoritative", "doi": "10.1/a"}]),
     )
 
@@ -123,11 +123,11 @@ def test_load_candidates_returns_only_candidates(raw_base, faculty_with_orcid):
 
 def test_load_candidates_finds_candidates_from_both_sources(raw_base, faculty_without_orcid):
     fixtures.write_text(
-        raw_base / "pubmed" / "bmi-002-name.xml",
+        raw_base / "pubmed" / "fac-002-name.xml",
         fixtures.pubmed_xml([{"title": "From PubMed", "pmid": "1", "year": "2021"}]),
     )
     fixtures.write_json(
-        raw_base / "openalex" / "bmi-002.json",
+        raw_base / "openalex" / "fac-002.json",
         fixtures.openalex_works([{"title": "From OpenAlex", "doi": "10.1/a"}]),
     )
 
@@ -145,8 +145,8 @@ def test_no_raw_files_yields_no_candidates(raw_base, faculty_with_orcid):
 
 
 def test_empty_result_sets_yield_no_candidates(raw_base, faculty_without_orcid):
-    fixtures.write_json(raw_base / "openalex" / "bmi-002.json", fixtures.openalex_works([]))
-    fixtures.write_text(raw_base / "pubmed" / "bmi-002-name.xml", fixtures.pubmed_xml([]))
+    fixtures.write_json(raw_base / "openalex" / "fac-002.json", fixtures.openalex_works([]))
+    fixtures.write_text(raw_base / "pubmed" / "fac-002-name.xml", fixtures.pubmed_xml([]))
 
     assert loader.load_candidates(
         faculty_without_orcid, raw_base / "pubmed", raw_base / "openalex"
@@ -156,7 +156,7 @@ def test_empty_result_sets_yield_no_candidates(raw_base, faculty_without_orcid):
 def test_loading_does_not_write_into_the_raw_directory(raw_base, faculty_with_orcid):
     """Raw harvest data is the source of truth and must stay read-only."""
     fixtures.write_json(
-        raw_base / "openalex" / "bmi-001.json",
+        raw_base / "openalex" / "fac-001.json",
         fixtures.openalex_works([{"title": "Work", "doi": "10.1/a"}]),
     )
     before = {p: p.stat().st_mtime_ns for p in raw_base.rglob("*") if p.is_file()}

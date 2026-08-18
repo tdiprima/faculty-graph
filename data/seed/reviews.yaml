@@ -7,15 +7,15 @@
 
 rejections: []
   # Example:
-  # - faculty_id: bmi-001
+  # - faculty_id: fac-001
   #   work_id: "doi:10.1234/wrong-person"
-  #   reason: "Different J. Saltz at another institution"
+  #   reason: "Different J. Carberry at another institution"
   #   reviewed_by: human
   #   reviewed_at: 2026-08-18
 
 verifications: []
   # Example:
-  # - faculty_id: bmi-001
+  # - faculty_id: fac-001
   #   work_id: "pmid:12345678"
   #   reason: "Confirmed via faculty ORCID profile"
   #   reviewed_by: human

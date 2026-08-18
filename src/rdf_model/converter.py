@@ -10,9 +10,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
+from src.config import base_uri
+
 logger = logging.getLogger(__name__)
 
-PREFIXES = """\
+# Read once at import: the base IRI must not change partway through a run, or
+# a single graph would carry terms under two different namespaces.
+FG_NAMESPACE = base_uri()
+FGDATA_NAMESPACE = f"{FG_NAMESPACE}data/"
+
+PREFIXES = f"""\
 @prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
@@ -20,11 +27,9 @@ PREFIXES = """\
 @prefix bibo:   <http://purl.org/ontology/bibo/> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix prov:   <http://www.w3.org/ns/prov#> .
-@prefix fg:     <http://example.org/faculty-graph/> .
-@prefix fgdata: <http://example.org/faculty-graph/data/> .
+@prefix fg:     <{FG_NAMESPACE}> .
+@prefix fgdata: <{FGDATA_NAMESPACE}> .
 """
-
-FGDATA_NAMESPACE = "http://example.org/faculty-graph/data/"
 
 
 def sanitize_uri_part(value):

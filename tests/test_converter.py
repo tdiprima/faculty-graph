@@ -2,7 +2,7 @@
 
 Every test that produces Turtle parses it. Output that looks right but does not
 parse is the failure mode this suite exists to prevent: the pipeline shipped
-`fgdata:faculty/bmi-004`, which is not a legal Turtle prefixed name, and no
+`fgdata:faculty/fac-004`, which is not a legal Turtle prefixed name, and no
 triple store would load it.
 """
 
@@ -16,9 +16,9 @@ rdflib = pytest.importorskip("rdflib", reason="rdflib parses the generated Turtl
 
 
 FACULTY = {
-    "faculty_id": "bmi-001",
+    "faculty_id": "fac-001",
     "full_name": "Ada Lovelace",
-    "department": "Biomedical Informatics",
+    "department": "Psychoceramics",
     "orcid": "0000-0002-1825-0097",
     "email": "ada@example.edu",
 }
@@ -52,9 +52,9 @@ def publication(**overrides):
 
 def test_faculty_uri_is_an_absolute_iri():
     """Regression: a prefixed name cannot contain an unescaped slash."""
-    uri = converter.build_faculty_uri("bmi-001")
+    uri = converter.build_faculty_uri("fac-001")
 
-    assert uri == "<http://example.org/faculty-graph/data/faculty/bmi-001>"
+    assert uri == "<http://example.org/faculty-graph/data/faculty/fac-001>"
 
 
 @pytest.mark.parametrize(
@@ -84,8 +84,8 @@ def test_assertions_from_different_sources_stay_distinct():
     """One work asserted by two sources must yield two assertion URIs."""
     record = publication(doi="10.1/a")
 
-    orcid_uri = converter.build_assertion_uri("bmi-001", "ORCID", record)
-    openalex_uri = converter.build_assertion_uri("bmi-001", "OpenAlex", record)
+    orcid_uri = converter.build_assertion_uri("fac-001", "ORCID", record)
+    openalex_uri = converter.build_assertion_uri("fac-001", "OpenAlex", record)
 
     assert orcid_uri != openalex_uri
 
@@ -93,8 +93,8 @@ def test_assertions_from_different_sources_stay_distinct():
 def test_assertions_for_different_faculty_stay_distinct():
     record = publication(doi="10.1/a")
 
-    assert converter.build_assertion_uri("bmi-001", "ORCID", record) != \
-           converter.build_assertion_uri("bmi-002", "ORCID", record)
+    assert converter.build_assertion_uri("fac-001", "ORCID", record) != \
+           converter.build_assertion_uri("fac-002", "ORCID", record)
 
 
 @pytest.mark.parametrize(
@@ -117,7 +117,7 @@ def test_minimal_document_parses():
 
 def test_faculty_block_parses_and_carries_expected_triples():
     graph = parse(render([]))
-    subject = rdflib.URIRef("http://example.org/faculty-graph/data/faculty/bmi-001")
+    subject = rdflib.URIRef("http://example.org/faculty-graph/data/faculty/fac-001")
     foaf_name = rdflib.URIRef("http://xmlns.com/foaf/0.1/name")
 
     assert (subject, foaf_name, rdflib.Literal("Ada Lovelace")) in graph
@@ -244,9 +244,9 @@ def test_convert_all_writes_per_faculty_and_combined_files(tmp_path):
 
     combined = converter.convert_all_to_rdf(results, tmp_path)
 
-    assert (tmp_path / "bmi-001.ttl").exists()
+    assert (tmp_path / "fac-001.ttl").exists()
     assert combined.name == "faculty-all.ttl"
-    parse((tmp_path / "bmi-001.ttl").read_text(encoding="utf-8"))
+    parse((tmp_path / "fac-001.ttl").read_text(encoding="utf-8"))
     parse(combined.read_text(encoding="utf-8"))
 
 
@@ -266,7 +266,7 @@ def test_publications_from_repeated_faculty_entries_are_merged(tmp_path):
 
     converter.convert_all_to_rdf(results, tmp_path)
 
-    graph = parse((tmp_path / "bmi-001.ttl").read_text(encoding="utf-8"))
+    graph = parse((tmp_path / "fac-001.ttl").read_text(encoding="utf-8"))
     article_type = rdflib.URIRef("http://purl.org/ontology/bibo/AcademicArticle")
     assert len(list(graph.subjects(None, article_type))) == 2
 
@@ -295,6 +295,6 @@ def test_reference_model_uses_the_same_faculty_iri_as_the_generator():
         pytest.skip("reference model not present in this checkout")
 
     graph = parse(example.read_text(encoding="utf-8"))
-    generated = converter.build_faculty_uri("bmi-001").strip("<>")
+    generated = converter.build_faculty_uri("fac-001").strip("<>")
 
     assert (rdflib.URIRef(generated), None, None) in graph

@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
+from src.config import institution_name
 from src.errors import HarvestError
 from src.harvest_openalex.parser import parse_works
 from src.provenance import (
@@ -93,8 +94,14 @@ def fetch_works_by_orcid(orcid_id):
     return {"results": results}
 
 
-def fetch_works_by_name(full_name, institution="Example University"):
-    """Fetch works by author name and institution. Lower confidence fallback."""
+def fetch_works_by_name(full_name, institution=None):
+    """Fetch works by author name and institution. Lower confidence fallback.
+
+    institution defaults to the configured INSTITUTION_NAME. Pass an empty
+    string to search by name alone across all institutions.
+    """
+    if institution is None:
+        institution = institution_name()
     search_filter = f"authorships.author.display_name.search:{full_name}"
     if institution:
         search_filter += f",authorships.institutions.display_name.search:{institution}"

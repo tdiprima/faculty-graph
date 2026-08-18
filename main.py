@@ -16,7 +16,7 @@ import os
 import sys
 from pathlib import Path
 
-from src.errors import SeedDataError
+from src.errors import ConfigError, SeedDataError
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ def get_paths():
     project_root = Path(__file__).resolve().parent
     return {
         "seed_csv": project_root / "data" / "seed" / "faculty.csv",
+        "seed_example_csv": project_root / "data" / "seed" / "faculty.csv.example",
         "reviews_yaml": project_root / "data" / "seed" / "reviews.yaml",
         "raw_orcid": project_root / "data" / "raw" / "orcid",
         "raw_pubmed": project_root / "data" / "raw" / "pubmed",
@@ -156,13 +157,21 @@ def main():
     paths = get_paths()
 
     if not paths["seed_csv"].exists():
-        logger.error("Seed file not found: %s", paths["seed_csv"])
+        logger.error(
+            "Seed file not found: %s. Copy %s to that path and fill in your "
+            "own faculty roster.",
+            paths["seed_csv"],
+            paths["seed_example_csv"],
+        )
         sys.exit(1)
 
     try:
         run_pipeline(args, paths)
     except SeedDataError as error:
         logger.error("Invalid seed data: %s", error)
+        sys.exit(1)
+    except ConfigError as error:
+        logger.error("Invalid configuration: %s", error)
         sys.exit(1)
 
 

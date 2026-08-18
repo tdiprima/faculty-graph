@@ -2,9 +2,11 @@
 
 An RDF-based pipeline that harvests public faculty publication data from ORCID, PubMed, and OpenAlex, reconciles it into a trusted knowledge graph with human review support, and generates faculty publication previews.
 
+It is institution-agnostic: point it at any university by setting `INSTITUTION_NAME` and supplying your own faculty seed list. Nothing about a specific school is hardcoded.
+
 ## What This Prototype Does
 
-- Reads a seed list of BMI faculty with known ORCID IDs.
+- Reads a seed list of faculty, ideally with known ORCID iDs.
 - Fetches publication records from three sources: ORCID, PubMed, and OpenAlex.
 - Converts harvested data into RDF (Turtle format) with per-source provenance.
 - Deduplicates publications by DOI/PMID while preserving separate assertions per source.
@@ -18,7 +20,6 @@ An RDF-based pipeline that harvests public faculty publication data from ORCID, 
 - Drupal publishing.
 - University-scale coverage.
 - Faculty approval workflow.
-- TCIA-specific harvesting.
 
 ## Project Structure
 
@@ -35,8 +36,9 @@ faculty-graph/
 │   └── qlever-setup.md       # QLever install and indexing guide
 ├── data/
 │   ├── seed/
-│   │   ├── faculty.csv       # Faculty seed list
-│   │   └── reviews.yaml      # Human review decisions
+│   │   ├── faculty.csv.example  # Template seed list (tracked)
+│   │   ├── faculty.csv          # Your faculty seed list (git-ignored)
+│   │   └── reviews.yaml         # Human review decisions
 │   ├── raw/
 │   │   ├── orcid/            # Raw ORCID API responses
 │   │   ├── pubmed/           # Raw PubMed XML responses
@@ -51,11 +53,12 @@ faculty-graph/
 │   ├── rejected-matches.rq
 │   ├── source-overlap.rq
 │   ├── coauthors.rq
-│   ├── tcia-publications.rq
+│   ├── topic-publications.rq
 │   └── faculty-publications-report.rq
 ├── src/
+│   ├── config.py             # Institution settings read from the environment
 │   ├── provenance.py         # Search method -> assertion status rules
-│   ├── errors.py             # HarvestError, SeedDataError
+│   ├── errors.py             # HarvestError, SeedDataError, ConfigError
 │   ├── harvest_orcid/        # ORCID harvester + seed list loader
 │   ├── harvest_pubmed/       # PubMed E-utilities harvester
 │   ├── harvest_openalex/     # OpenAlex API harvester
@@ -77,6 +80,13 @@ faculty-graph/
 ```bash
 # Install dependencies
 pip install -e .
+
+# Create your faculty seed list from the template
+cp data/seed/faculty.csv.example data/seed/faculty.csv
+$EDITOR data/seed/faculty.csv
+
+# Tell the pipeline which institution to filter on
+export INSTITUTION_NAME="Your University"
 
 # Optional: install PyYAML for human review support
 pip install -e ".[review]"
@@ -103,11 +113,54 @@ python3 main.py --disambiguate
 
 | Variable | Required | Description |
 |---|---|---|
+| `INSTITUTION_NAME` | Recommended | Institution name as OpenAlex spells it, used to constrain name searches (default: `Example University`). Set it empty to search all institutions. |
+| `INSTITUTION_AFFILIATION` | No | Affiliation substring for PubMed searches (default: `INSTITUTION_NAME`). Use a shorter form when papers rarely write the full name. |
+| `FG_BASE_URI` | No | Base IRI for generated RDF; must be absolute and end with `/` (default: `http://example.org/faculty-graph/`) |
 | `NCBI_API_KEY` | No | Higher PubMed rate limits (3 req/s without, 10 with) |
 | `OPENALEX_EMAIL` | No | OpenAlex polite pool access |
 | `OLLAMA_URL` | No | Ollama endpoint (default: `http://localhost:11434`) |
 | `OLLAMA_MODEL` | No | Ollama model for disambiguation (default: `gemma4`) |
 | `LOG_LEVEL` | No | Logging level (default: `INFO`) |
+
+### Seed List Format
+
+`data/seed/faculty.csv` needs all five columns, header row included:
+
+| Column | Required | Notes |
+|---|---|---|
+| `faculty_id` | Yes | Your own stable identifier. `[A-Za-z0-9_-]` only — it becomes a filename and an RDF IRI. Must be unique. |
+| `full_name` | Yes | `First Last`. PubMed name searches use the first and last whitespace-separated tokens. |
+| `department` | No | Free text. Passed to the LLM disambiguator as context. |
+| `orcid` | No | `0000-0000-0000-0000` form (trailing `X` allowed). Supply it wherever you can: an iD yields `authoritative` assertions, a bare name yields `candidate` ones needing review. |
+| `email` | No | Emitted as `foaf:mbox`. |
+
+```csv
+faculty_id,full_name,department,orcid,email
+fac-001,Josiah Carberry,Psychoceramics,0000-0002-1825-0097,josiah.carberry@example.edu
+fac-002,Ada Lovelace,Computer Science,,ada.lovelace@example.edu
+```
+
+The whole file is validated before any network call, so a malformed row fails
+immediately with the offending line number rather than midway through a harvest.
+
+### Adapting to Your Institution
+
+1. Copy `data/seed/faculty.csv.example` to `data/seed/faculty.csv` and list your
+   faculty. `faculty.csv` is git-ignored, so real names and email addresses stay
+   out of version control.
+2. Set `INSTITUTION_NAME` to the name OpenAlex uses for your institution — search
+   <https://api.openalex.org/institutions?search=> to confirm the exact spelling.
+   Getting this wrong silently returns zero name-search results.
+3. If your papers list a shorter affiliation than the full legal name, set
+   `INSTITUTION_AFFILIATION` to that shorter form for PubMed.
+4. Optionally set `FG_BASE_URI` to a namespace you control. If you do, update the
+   matching `PREFIX` lines in `queries/*.rq` — they are written against the
+   default namespace.
+5. Edit `queries/topic-publications.rq` to use the keywords your institution
+   reports on.
+
+None of these settings affect ORCID-iD searches: an iD is authoritative on its
+own, so it is never filtered by institution.
 
 ## Tests
 
@@ -130,9 +183,9 @@ Edit `data/seed/reviews.yaml` to add rejections or verifications:
 
 ```yaml
 rejections:
-  - faculty_id: bmi-001
+  - faculty_id: fac-001
     work_id: "doi:10.1234/wrong-person"
-    reason: "Different J. Saltz at another institution"
+    reason: "Different J. Carberry at another institution"
     reviewed_by: human
     reviewed_at: 2026-08-18
 ```
@@ -158,9 +211,9 @@ faculty, publications, provenance, and assertion statuses (candidate, verified,
 rejected, authoritative).
 
 Node IRIs are written in full angle-bracket form
-(`<http://example.org/faculty-graph/data/faculty/bmi-001>`) rather than as
+(`<http://example.org/faculty-graph/data/faculty/fac-001>`) rather than as
 prefixed names. A Turtle prefixed name cannot contain an unescaped `/`, so
-`fgdata:faculty/bmi-001` is not parseable and no triple store will load it.
+`fgdata:faculty/fac-001` is not parseable and no triple store will load it.
 
 Assertion status is derived from how a publication was found: an ORCID-iD
 search yields `authoritative`, a name search yields `candidate`. That rule lives

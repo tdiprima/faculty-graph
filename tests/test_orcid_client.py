@@ -77,9 +77,9 @@ def test_blank_orcid_is_logged(monkeypatch, tmp_path, faculty_without_orcid, cap
 @pytest.mark.parametrize("blank", ["", "   ", "\t"], ids=["empty", "spaces", "tab"])
 def test_whitespace_only_orcid_is_treated_as_blank(monkeypatch, tmp_path, blank):
     faculty = {
-        "faculty_id": "bmi-002",
+        "faculty_id": "fac-002",
         "full_name": "Grace Hopper",
-        "department": "BMI",
+        "department": "Psychoceramics",
         "orcid": blank,
         "email": "grace@example.edu",
     }
@@ -92,7 +92,7 @@ def test_whitespace_only_orcid_is_treated_as_blank(monkeypatch, tmp_path, blank)
 
 def test_missing_orcid_key_is_treated_as_blank(monkeypatch, tmp_path):
     """A row dict built without the column must not raise a KeyError."""
-    faculty = {"faculty_id": "bmi-002", "full_name": "Grace Hopper"}
+    faculty = {"faculty_id": "fac-002", "full_name": "Grace Hopper"}
     requested = _record_requests(monkeypatch)
 
     results = client.harvest_all([faculty], tmp_path)

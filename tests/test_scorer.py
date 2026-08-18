@@ -194,7 +194,7 @@ def test_score_candidate_attaches_work_identifiers(monkeypatch, faculty_with_orc
 
     result = scorer.score_candidate(faculty_with_orcid, candidate)
 
-    assert result["faculty_id"] == "bmi-001"
+    assert result["faculty_id"] == "fac-001"
     assert result["work_doi"] == "10.1/a"
     assert result["work_pmid"] == "123"
     assert result["work_title"] == "A study"

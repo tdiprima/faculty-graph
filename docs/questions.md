@@ -11,7 +11,7 @@ Questions to raise with the team. Add answers inline when resolved.
 
 ## Batch 2 (After Prototype)
 
-- Who is the first real consumer: BMI website, TCIA reporting, or visualizations?
+- Who is the first real consumer: a department website, internal reporting, or visualizations?
 - Who approves publication matches?
 - Who approves generated faculty page drafts?
 - What network access should the SPARQL endpoint have?

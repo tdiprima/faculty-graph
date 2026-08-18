@@ -14,6 +14,8 @@ import os
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
+from src.config import institution_name
+
 logger = logging.getLogger(__name__)
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
@@ -36,7 +38,7 @@ def _build_prompt(faculty, candidate, known_publications=None):
 FACULTY:
   Name: {faculty["full_name"]}
   Department: {faculty.get("department", "unknown")}
-  Institution: Example University
+  Institution: {institution_name()}
   ORCID: {faculty.get("orcid", "none")}
 
 CANDIDATE PUBLICATION:

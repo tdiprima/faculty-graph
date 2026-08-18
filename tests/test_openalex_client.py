@@ -172,7 +172,7 @@ def test_successful_harvest_tags_and_saves(monkeypatch, tmp_path, faculty_with_o
 
     assert publications[0]["source"] == "OpenAlex"
     assert publications[0]["assertion_status"] == "authoritative"
-    assert (tmp_path / "bmi-001.json").exists()
+    assert (tmp_path / "fac-001.json").exists()
 
 
 def test_faculty_without_orcid_is_harvested_by_name(monkeypatch, tmp_path, faculty_without_orcid):
@@ -187,6 +187,7 @@ def test_faculty_without_orcid_is_harvested_by_name(monkeypatch, tmp_path, facul
 def test_name_search_is_constrained_to_the_institution(monkeypatch, tmp_path,
                                                        faculty_without_orcid):
     """Without the institution filter, 'Grace Hopper' pulls in every namesake."""
+    monkeypatch.setenv("INSTITUTION_NAME", "Example University")
     requested = _serve(monkeypatch, [_page([{"title": "A", "doi": "10.1/a"}])])
 
     client.harvest_faculty(faculty_without_orcid, tmp_path)
@@ -196,8 +197,20 @@ def test_name_search_is_constrained_to_the_institution(monkeypatch, tmp_path,
     assert "authorships.institutions.display_name.search:Example University" in query
 
 
+def test_name_search_skips_the_institution_filter_when_unset(monkeypatch):
+    """An empty INSTITUTION_NAME means search every institution, not literal ''."""
+    monkeypatch.setenv("INSTITUTION_NAME", "")
+    requested = _serve(monkeypatch, [_page([])])
+
+    client.fetch_works_by_name("Grace Hopper")
+
+    query = unquote_plus(requested[0])
+    assert "authorships.institutions" not in query
+
+
 def test_name_and_institution_are_anded_in_one_filter(monkeypatch):
     """OpenAlex ANDs comma-separated terms only within a single filter param."""
+    monkeypatch.setenv("INSTITUTION_NAME", "Example University")
     requested = _serve(monkeypatch, [_page([])])
 
     client.fetch_works_by_name("Grace Hopper")
@@ -209,11 +222,12 @@ def test_name_and_institution_are_anded_in_one_filter(monkeypatch):
 
 
 def test_name_search_institution_is_overridable(monkeypatch):
+    monkeypatch.setenv("INSTITUTION_NAME", "Example University")
     requested = _serve(monkeypatch, [_page([])])
 
-    client.fetch_works_by_name("Grace Hopper", institution="Yale University")
+    client.fetch_works_by_name("Grace Hopper", institution="Other University")
 
-    assert "Yale University" in unquote_plus(requested[0])
+    assert "Other University" in unquote_plus(requested[0])
     assert "Example University" not in unquote_plus(requested[0])
 
 

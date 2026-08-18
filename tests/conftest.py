@@ -9,9 +9,9 @@ from tests import fixtures
 def faculty_with_orcid():
     """A seed record that harvesters will search by ORCID iD."""
     return {
-        "faculty_id": "bmi-001",
+        "faculty_id": "fac-001",
         "full_name": "Ada Lovelace",
-        "department": "Biomedical Informatics",
+        "department": "Psychoceramics",
         "orcid": "0000-0002-1825-0097",
         "email": "ada@example.edu",
     }
@@ -21,9 +21,9 @@ def faculty_with_orcid():
 def faculty_without_orcid():
     """A seed record that falls back to name search, producing candidates."""
     return {
-        "faculty_id": "bmi-002",
+        "faculty_id": "fac-002",
         "full_name": "Grace Hopper",
-        "department": "Biomedical Informatics",
+        "department": "Psychoceramics",
         "orcid": "",
         "email": "grace@example.edu",
     }

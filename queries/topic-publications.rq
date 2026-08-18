@@ -1,3 +1,6 @@
+# Publications whose title mentions a topic of interest.
+# Replace the keywords below with the terms your institution reports on.
+
 PREFIX fg:     <http://example.org/faculty-graph/>
 PREFIX fgdata: <http://example.org/faculty-graph/data/>
 PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
@@ -24,12 +27,9 @@ WHERE {
 
     FILTER (?statusNode != fg:rejected)
     FILTER (
-        CONTAINS(LCASE(?title), "cancer imaging") ||
-        CONTAINS(LCASE(?title), "tcia") ||
-        CONTAINS(LCASE(?title), "pathology") ||
+        CONTAINS(LCASE(?title), "machine learning") ||
         CONTAINS(LCASE(?title), "imaging") ||
-        CONTAINS(LCASE(?title), "radiology") ||
-        CONTAINS(LCASE(?title), "digital pathology")
+        CONTAINS(LCASE(?title), "genomics")
     )
 }
 ORDER BY ?name DESC(?date)

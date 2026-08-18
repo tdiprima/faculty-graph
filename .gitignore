@@ -16,11 +16,15 @@ wheels/
 data/raw/
 
 # Generated output (regenerable, except example.ttl)
-data/output/rdf/faculty-*.ttl
-data/output/rdf/bmi-*.ttl
+data/output/rdf/*.ttl
+!data/output/rdf/example.ttl
 data/output/previews/
 data/output/disambiguation/
 data/output/logs/
+
+# Real faculty roster: contains names and institutional email addresses.
+# Copy data/seed/faculty.csv.example to data/seed/faculty.csv and fill it in.
+data/seed/faculty.csv
 
 # Other
 faculty-data-pipeline-solo-plan.md

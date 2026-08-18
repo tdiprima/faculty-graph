@@ -29,8 +29,8 @@ Record decisions here so future-you knows why things are the way they are.
 ## 005 - Node IRIs written in full, not as prefixed names
 
 **Date:** 2026-08-18
-**Decision:** Emit `<http://example.org/faculty-graph/data/faculty/bmi-001>` rather than `fgdata:faculty/bmi-001`.
-**Reason:** A Turtle prefixed name cannot contain an unescaped `/` (the `PN_LOCAL` production excludes it). The pipeline shipped the prefixed form, and every generated file failed to parse: `riot --validate` reported `Not a valid token for an RDF term: [SLASH]`. Nothing would have loaded into Fuseki or QLever. Escaping as `fgdata:faculty\/bmi-001` is legal but easy to get wrong by hand; absolute IRIs are unambiguous. `data/output/rdf/example.ttl` uses the same form, and the test suite parses all generated Turtle with rdflib so this cannot regress silently.
+**Decision:** Emit `<http://example.org/faculty-graph/data/faculty/fac-001>` rather than `fgdata:faculty/fac-001`.
+**Reason:** A Turtle prefixed name cannot contain an unescaped `/` (the `PN_LOCAL` production excludes it). The pipeline shipped the prefixed form, and every generated file failed to parse: `riot --validate` reported `Not a valid token for an RDF term: [SLASH]`. Nothing would have loaded into Fuseki or QLever. Escaping as `fgdata:faculty\/fac-001` is legal but easy to get wrong by hand; absolute IRIs are unambiguous. `data/output/rdf/example.ttl` uses the same form, and the test suite parses all generated Turtle with rdflib so this cannot regress silently.
 
 ## 006 - Assertion status derived from search method, in one place
 

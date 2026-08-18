@@ -1,0 +1,4 @@
+faculty_id,full_name,department,orcid,email
+fac-001,Josiah Carberry,Psychoceramics,0000-0002-1825-0097,josiah.carberry@example.edu
+fac-002,Ada Lovelace,Computer Science,,ada.lovelace@example.edu
+fac-003,Grace Hopper,Computer Science,,grace.hopper@example.edu

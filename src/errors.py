@@ -19,3 +19,11 @@ class SeedDataError(Exception):
 
 class ReviewDataError(Exception):
     """A human review entry in reviews.yaml is missing a required key."""
+
+
+class ConfigError(Exception):
+    """An environment variable holds a value the pipeline cannot use.
+
+    Raised at startup rather than at first use, so a bad base IRI fails before
+    a harvest run writes unloadable RDF.
+    """

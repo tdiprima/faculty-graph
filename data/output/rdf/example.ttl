@@ -2,7 +2,7 @@
 #
 # Node IRIs are written in full angle-bracket form rather than as prefixed
 # names: a Turtle prefixed name cannot contain an unescaped "/", so
-# fgdata:faculty/bmi-001 does not parse. src/rdf_model/converter.py emits the
+# fgdata:faculty/fac-001 does not parse. src/rdf_model/converter.py emits the
 # same absolute form.
 
 @prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
@@ -17,13 +17,13 @@
 
 # ── Faculty Member ──────────────────────────────────────────────────
 
-<http://example.org/faculty-graph/data/faculty/bmi-001>
+<http://example.org/faculty-graph/data/faculty/fac-001>
     a                   foaf:Person ;
-    foaf:name           "Joel Saltz" ;
-    fg:facultyId        "bmi-001" ;
-    fg:department       "Biomedical Informatics" ;
-    fg:orcidId          "0000-0002-3451-2165" ;
-    foaf:mbox           <mailto:Joel.Saltz@stonybrookmedicine.edu> .
+    foaf:name           "Josiah Carberry" ;
+    fg:facultyId        "fac-001" ;
+    fg:department       "Psychoceramics" ;
+    fg:orcidId          "0000-0002-1825-0097" ;
+    foaf:mbox           <mailto:josiah.carberry@example.edu> .
 
 # ── Publication 1 (authoritative from ORCID) ────────────────────────
 
@@ -33,9 +33,9 @@
     bibo:doi            "10.1038/s41591-019-0508-1" ;
     dcterms:date        "2019-08-05"^^xsd:date .
 
-<http://example.org/faculty-graph/data/assertion/bmi-001-doi-10.1038-s41591-019-0508-1>
+<http://example.org/faculty-graph/data/assertion/fac-001-doi-10.1038-s41591-019-0508-1>
     a                   fg:PublicationAssertion ;
-    fg:faculty          <http://example.org/faculty-graph/data/faculty/bmi-001> ;
+    fg:faculty          <http://example.org/faculty-graph/data/faculty/fac-001> ;
     fg:work             <http://example.org/faculty-graph/data/work/doi-10.1038-s41591-019-0508-1> ;
     fg:status           fg:authoritative ;
     fg:source           fg:ORCID ;
@@ -47,20 +47,20 @@
 
 <http://example.org/faculty-graph/data/work/doi-10.1234-fake-example>
     a                   bibo:AcademicArticle ;
-    dcterms:title       "Unrelated paper by different J. Saltz" ;
+    dcterms:title       "Unrelated paper by a different J. Carberry" ;
     bibo:doi            "10.1234/fake-example" ;
     dcterms:date        "2020-03-15"^^xsd:date .
 
-<http://example.org/faculty-graph/data/assertion/bmi-001-doi-10.1234-fake-example>
+<http://example.org/faculty-graph/data/assertion/fac-001-doi-10.1234-fake-example>
     a                   fg:PublicationAssertion ;
-    fg:faculty          <http://example.org/faculty-graph/data/faculty/bmi-001> ;
+    fg:faculty          <http://example.org/faculty-graph/data/faculty/fac-001> ;
     fg:work             <http://example.org/faculty-graph/data/work/doi-10.1234-fake-example> ;
     fg:status           fg:rejected ;
     fg:source           fg:PubMed ;
     fg:harvestedAt      "2026-08-18T12:00:00"^^xsd:dateTime ;
     fg:reviewedBy       "human" ;
     fg:reviewedAt       "2026-08-18T14:00:00"^^xsd:dateTime ;
-    fg:reviewNote       "Different J. Saltz - not our faculty member" ;
+    fg:reviewNote       "Different J. Carberry - not our faculty member" ;
     fg:searchMethod     "name" ;
     prov:wasAttributedTo fg:PubMed .
 
