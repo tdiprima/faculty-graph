@@ -8,6 +8,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,18 @@ def format_date_literal(date_str):
     return f'"{date_str}"^^xsd:date'
 
 
+def format_integer_literal(value):
+    """Return a bare xsd:integer literal for value, or None if it isn't integer-safe.
+
+    Emitted unquoted, so a non-integer value here would inject raw Turtle rather
+    than break out of a string literal; only a validated int is ever returned.
+    """
+    try:
+        return str(int(value))
+    except (TypeError, ValueError):
+        return None
+
+
 def faculty_to_turtle(faculty):
     """Generate Turtle triples for a faculty member."""
     faculty_id = faculty["faculty_id"]
@@ -96,10 +109,10 @@ def faculty_to_turtle(faculty):
         build_faculty_uri(faculty_id),
         f"    a                   foaf:Person ;",
         f'    foaf:name           "{escape_turtle_string(faculty["full_name"])}" ;',
-        f'    fg:facultyId        "{faculty_id}" ;',
+        f'    fg:facultyId        "{escape_turtle_string(faculty_id)}" ;',
         f'    fg:department       "{escape_turtle_string(faculty["department"])}" ;',
-        f'    fg:orcidId          "{faculty["orcid"]}" ;',
-        f'    foaf:mbox           <mailto:{faculty["email"]}> .',
+        f'    fg:orcidId          "{escape_turtle_string(faculty["orcid"])}" ;',
+        f'    foaf:mbox           <mailto:{quote(faculty["email"], safe="@.")}> .',
     ]
     return "\n".join(lines)
 
@@ -114,13 +127,13 @@ def publication_to_turtle(publication):
     ]
 
     if publication.get("doi"):
-        lines.append(f'    bibo:doi            "{publication["doi"]}" ;')
+        lines.append(f'    bibo:doi            "{escape_turtle_string(str(publication["doi"]))}" ;')
 
     if publication.get("pmid"):
-        lines.append(f'    bibo:pmid           "{publication["pmid"]}" ;')
+        lines.append(f'    bibo:pmid           "{escape_turtle_string(str(publication["pmid"]))}" ;')
 
     if publication.get("type"):
-        lines.append(f'    fg:workType         "{publication["type"]}" ;')
+        lines.append(f'    fg:workType         "{escape_turtle_string(publication["type"])}" ;')
 
     if publication.get("journal"):
         lines.append(f'    fg:journal          "{escape_turtle_string(publication["journal"])}" ;')
@@ -130,15 +143,16 @@ def publication_to_turtle(publication):
         lines.append(f"    dcterms:date        {date_literal} ;")
 
     if publication.get("openalex_id"):
-        lines.append(f'    fg:openAlexId       "{publication["openalex_id"]}" ;')
+        lines.append(f'    fg:openAlexId       "{escape_turtle_string(str(publication["openalex_id"]))}" ;')
 
-    if publication.get("cited_by_count"):
-        lines.append(f'    fg:citedByCount     {publication["cited_by_count"]} ;')
+    cited_by = format_integer_literal(publication.get("cited_by_count"))
+    if cited_by is not None:
+        lines.append(f"    fg:citedByCount     {cited_by} ;")
 
     for id_type, id_value in publication.get("external_ids", {}).items():
         if id_type not in ("doi", "pmid", "openalex"):
             lines.append(
-                f'    fg:externalId       [ fg:idType "{id_type}" ; '
+                f'    fg:externalId       [ fg:idType "{escape_turtle_string(str(id_type))}" ; '
                 f'fg:idValue "{escape_turtle_string(str(id_value))}" ] ;'
             )
 
@@ -169,9 +183,9 @@ def assertion_to_turtle(faculty_id, publication, harvest_timestamp):
         lines.append(f'    fg:searchMethod     "{publication["search_method"]}" ;')
 
     if publication.get("reviewed_by"):
-        lines.append(f'    fg:reviewedBy       "{publication["reviewed_by"]}" ;')
+        lines.append(f'    fg:reviewedBy       "{escape_turtle_string(str(publication["reviewed_by"]))}" ;')
     if publication.get("reviewed_at"):
-        lines.append(f'    fg:reviewedAt       "{publication["reviewed_at"]}"^^xsd:dateTime ;')
+        lines.append(f'    fg:reviewedAt       "{escape_turtle_string(str(publication["reviewed_at"]))}"^^xsd:dateTime ;')
     if publication.get("review_note"):
         lines.append(f'    fg:reviewNote       "{escape_turtle_string(publication["review_note"])}" ;')
 
@@ -196,7 +210,7 @@ def coauthor_to_turtle(publication):
         lines.append(f"    a                   foaf:Person ;")
         lines.append(f'    foaf:name           "{escape_turtle_string(name)}" ;')
         if coauthor.get("orcid"):
-            lines.append(f'    fg:orcidId          "{coauthor["orcid"]}" ;')
+            lines.append(f'    fg:orcidId          "{escape_turtle_string(str(coauthor["orcid"]))}" ;')
         lines[-1] = lines[-1].rstrip(" ;") + " ."
         lines.append("")
         lines.append(f"{work_uri} dcterms:creator {coauthor_uri} .")

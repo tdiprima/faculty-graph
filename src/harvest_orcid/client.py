@@ -4,8 +4,10 @@ import csv
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -22,6 +24,13 @@ SOURCE_NAME = "ORCID"
 # at load time with a readable message rather than as a bare KeyError later.
 REQUIRED_SEED_COLUMNS = ("faculty_id", "full_name", "department", "orcid", "email")
 REQUEST_DELAY_SECONDS = 1.0
+
+# faculty_id and orcid are used to build filesystem paths and API URLs
+# throughout the pipeline; an unrestricted charset would let a crafted seed
+# row escape the intended output directory or alter the ORCID request path.
+FACULTY_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+ORCID_PATTERN = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def load_seed_faculty(csv_path):
@@ -64,6 +73,24 @@ def load_seed_faculty(csv_path):
             raise SeedDataError(
                 f"{csv_path} line {line_number}: duplicate faculty_id '{faculty_id}'"
             )
+        if not FACULTY_ID_PATTERN.match(faculty_id):
+            raise SeedDataError(
+                f"{csv_path} line {line_number}: faculty_id '{faculty_id}' contains "
+                "characters outside [A-Za-z0-9_-]"
+            )
+
+        orcid = record.get("orcid", "")
+        if orcid and not ORCID_PATTERN.match(orcid):
+            raise SeedDataError(
+                f"{csv_path} line {line_number}: orcid '{orcid}' is not a valid ORCID iD"
+            )
+
+        email = record.get("email", "")
+        if email and not EMAIL_PATTERN.match(email):
+            raise SeedDataError(
+                f"{csv_path} line {line_number}: email '{email}' is not a valid email address"
+            )
+
         seen_ids.add(faculty_id)
         faculty.append(record)
 
@@ -76,7 +103,7 @@ def load_seed_faculty(csv_path):
 
 def fetch_orcid_works(orcid_id):
     """Fetch works for a single ORCID ID. Returns parsed JSON."""
-    url = f"{ORCID_API_BASE}/{orcid_id}/works"
+    url = f"{ORCID_API_BASE}/{quote(orcid_id, safe='')}/works"
     request = Request(url, headers={"Accept": "application/json"})
 
     try:
