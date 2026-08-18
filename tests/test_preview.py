@@ -213,3 +213,74 @@ def test_generate_all_previews_never_writes_into_raw(tmp_path, raw_base, seed_fi
 
     after = {p: p.stat().st_mtime_ns for p in raw_base.rglob("*") if p.is_file()}
     assert after == before, "preview must not write into the raw harvest directory"
+
+
+def test_locates_both_pubmed_search_method_files(raw_base, faculty_with_orcid):
+    fixtures.write_text(
+        raw_base / "pubmed" / "fac-001-orcid.xml", fixtures.pubmed_xml([])
+    )
+    fixtures.write_text(
+        raw_base / "pubmed" / "fac-001-name.xml", fixtures.pubmed_xml([])
+    )
+
+    located = preview._locate_raw_files(faculty_with_orcid, raw_base)
+
+    assert located["pubmed:orcid"].name == "fac-001-orcid.xml"
+    assert located["pubmed:name"].name == "fac-001-name.xml"
+
+
+def test_pubmed_publications_reach_the_page_labelled_pubmed(
+    raw_base, faculty_with_orcid
+):
+    """Regression: PubMed harvests were never read, so Source never said pubmed."""
+    fixtures.write_text(
+        raw_base / "pubmed" / "fac-001-orcid.xml",
+        fixtures.pubmed_xml([
+            {"title": "A PubMed work", "pmid": "111", "year": "2020"},
+        ]),
+    )
+
+    publications = preview._load_faculty_publications(
+        preview._locate_raw_files(faculty_with_orcid, raw_base)
+    )
+
+    assert [p["title"] for p in publications] == ["A PubMed work"]
+    assert publications[0]["_source"] == "pubmed"
+    html = preview.generate_faculty_html(faculty_with_orcid, publications)
+    assert "<td>pubmed</td>" in html
+
+
+def test_same_record_from_both_pubmed_files_appears_once(
+    raw_base, faculty_with_orcid
+):
+    """The ORCID and name searches overlap; PMID must dedupe them."""
+    entry = {"title": "Overlapping work", "pmid": "222", "year": "2020"}
+    fixtures.write_text(
+        raw_base / "pubmed" / "fac-001-orcid.xml", fixtures.pubmed_xml([entry])
+    )
+    fixtures.write_text(
+        raw_base / "pubmed" / "fac-001-name.xml", fixtures.pubmed_xml([entry])
+    )
+
+    publications = preview._load_faculty_publications(
+        preview._locate_raw_files(faculty_with_orcid, raw_base)
+    )
+
+    assert len(publications) == 1
+
+
+def test_malformed_pubmed_xml_is_skipped_not_fatal(
+    raw_base, faculty_with_orcid, caplog
+):
+    fixtures.write_text(raw_base / "pubmed" / "fac-001-name.xml", "<PubmedArticleSet")
+    fixtures.write_json(
+        raw_base / "orcid" / f"{faculty_with_orcid['orcid']}.json",
+        fixtures.orcid_works([{"title": "Still here", "doi": "10.1/a"}]),
+    )
+
+    publications = preview._load_faculty_publications(
+        preview._locate_raw_files(faculty_with_orcid, raw_base)
+    )
+
+    assert [p["title"] for p in publications] == ["Still here"]
+    assert "Failed to parse PubMed XML" in caplog.text

@@ -6,35 +6,71 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from src.provenance import SEARCH_METHOD_NAME, SEARCH_METHOD_ORCID
+
 logger = logging.getLogger(__name__)
+
+PUBMED_SEARCH_METHODS = (SEARCH_METHOD_ORCID, SEARCH_METHOD_NAME)
+
+# PubMed writes one raw file per search method, so its raw_files keys carry a
+# suffix ("pubmed:name") to stay unique. The suffix is display-only noise.
+SOURCE_KEY_SEPARATOR = ":"
+
+
+def _base_source(source_key):
+    """Return the source name a raw_files key refers to, without its suffix."""
+    return source_key.split(SOURCE_KEY_SEPARATOR, 1)[0]
+
+
+def _read_json(path):
+    """Read a raw JSON harvest file."""
+    with open(path, encoding="utf-8") as infile:
+        return json.load(infile)
 
 
 def _parse_raw_file(source_name, path):
     """Parse one raw harvest file with the parser matching its source."""
-    with open(path, encoding="utf-8") as infile:
-        data = json.load(infile)
-
     if source_name == "orcid":
         from src.harvest_orcid.parser import parse_works as parse_orcid
-        return parse_orcid(data)
+        return parse_orcid(_read_json(path))
     if source_name == "openalex":
         from src.harvest_openalex.parser import parse_works as parse_openalex
-        return parse_openalex(data)
+        return parse_openalex(_read_json(path))
+    if source_name == "pubmed":
+        from src.harvest_pubmed.parser import parse_pubmed_xml
+        return parse_pubmed_xml(Path(path).read_text(encoding="utf-8"))
 
     logger.warning("No preview parser for source %s", source_name)
     return []
 
 
+def _identity_keys(publication):
+    """Return the identifiers that mark this publication as already seen.
+
+    PubMed records often carry a PMID but no DOI, and the same record can arrive
+    from both PubMed search methods, so PMID must dedupe alongside DOI.
+    """
+    keys = []
+    doi = publication.get("doi")
+    if doi:
+        keys.append(("doi", doi))
+    pmid = publication.get("pmid")
+    if pmid:
+        keys.append(("pmid", pmid))
+    return keys
+
+
 def _load_faculty_publications(raw_files):
-    """Load publications from the given {source_name: raw_file_path} mapping.
+    """Load publications from the given {source_key: raw_file_path} mapping.
 
     Paths are resolved by the caller so this stays a pure read: the preview
     stage must never write into the raw harvest directory.
     """
     publications = []
-    seen_dois = set()
+    seen_identifiers = set()
 
-    for source_name, path in raw_files.items():
+    for source_key, path in raw_files.items():
+        source_name = _base_source(source_key)
         try:
             parsed = _parse_raw_file(source_name, path)
         except json.JSONDecodeError as error:
@@ -45,11 +81,10 @@ def _load_faculty_publications(raw_files):
             continue
 
         for pub in parsed:
-            doi = pub.get("doi")
-            if doi and doi in seen_dois:
+            identity_keys = _identity_keys(pub)
+            if any(key in seen_identifiers for key in identity_keys):
                 continue
-            if doi:
-                seen_dois.add(doi)
+            seen_identifiers.update(identity_keys)
             pub["_source"] = source_name
             publications.append(pub)
 
@@ -149,7 +184,8 @@ def generate_faculty_html(faculty, publications):
 def _locate_raw_files(faculty, raw_base):
     """Map each source to this faculty member's raw harvest file, if present.
 
-    ORCID files are named by ORCID iD, every other source by faculty_id.
+    ORCID files are named by ORCID iD, every other source by faculty_id. PubMed
+    harvests one file per search method, so it contributes one key per file.
     """
     raw_files = {}
 
@@ -162,6 +198,13 @@ def _locate_raw_files(faculty, raw_base):
     openalex_path = raw_base / "openalex" / f"{faculty['faculty_id']}.json"
     if openalex_path.exists():
         raw_files["openalex"] = openalex_path
+
+    for search_method in PUBMED_SEARCH_METHODS:
+        pubmed_path = (
+            raw_base / "pubmed" / f"{faculty['faculty_id']}-{search_method}.xml"
+        )
+        if pubmed_path.exists():
+            raw_files[f"pubmed{SOURCE_KEY_SEPARATOR}{search_method}"] = pubmed_path
 
     return raw_files
 
