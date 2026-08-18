@@ -1,10 +1,10 @@
 """LLM-based disambiguation for candidate publication matches.
 
-Uses the Anthropic Messages API to evaluate whether a candidate publication
-belongs to a specific faculty member. Stores recommendations as evidence,
-not as final truth.
+Uses a local Ollama instance (gemma4 model) to evaluate whether a candidate
+publication belongs to a specific faculty member. Stores recommendations as
+evidence, not as final truth.
 
-Requires ANTHROPIC_API_KEY environment variable.
+Requires Ollama running locally (default: http://localhost:11434).
 """
 
 import json
@@ -15,9 +15,8 @@ from urllib.error import HTTPError, URLError
 
 logger = logging.getLogger(__name__)
 
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_VERSION = "2023-06-01"
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+DEFAULT_MODEL = "gemma4"
 
 
 def _build_prompt(faculty, candidate, known_publications=None):
@@ -55,51 +54,51 @@ Respond with ONLY a JSON object (no other text):
 }}"""
 
 
-def _call_api(prompt, api_key, model=None):
-    """Call Anthropic Messages API and return parsed response."""
+def _call_api(prompt, model=None):
+    """Call Ollama generate API and return parsed response."""
     model = model or DEFAULT_MODEL
+    url = f"{OLLAMA_BASE_URL}/api/generate"
     payload = json.dumps({
         "model": model,
-        "max_tokens": 300,
-        "messages": [{"role": "user", "content": prompt}],
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.1,
+            "num_predict": 300,
+        },
     }).encode("utf-8")
 
     request = Request(
-        ANTHROPIC_API_URL,
+        url,
         data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "x-api-key": api_key,
-            "anthropic-version": ANTHROPIC_VERSION,
-        },
+        headers={"Content-Type": "application/json"},
         method="POST",
     )
 
     try:
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=120) as response:
             data = json.loads(response.read().decode("utf-8"))
-            text = data["content"][0]["text"]
+            text = data.get("response", "")
+            text = text.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+                text = text.rsplit("```", 1)[0]
             return json.loads(text)
     except (HTTPError, URLError) as error:
-        logger.error("Anthropic API error: %s", error)
+        logger.error("Ollama API error: %s", error)
         return None
     except (json.JSONDecodeError, KeyError, IndexError) as error:
         logger.error("Failed to parse LLM response: %s", error)
         return None
 
 
-def score_candidate(faculty, candidate, known_publications=None, api_key=None):
+def score_candidate(faculty, candidate, known_publications=None):
     """Score a single candidate publication match.
 
     Returns dict with recommendation, confidence, explanation, or None on failure.
     """
-    api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        logger.error("ANTHROPIC_API_KEY not set. Cannot run LLM disambiguation.")
-        return None
-
     prompt = _build_prompt(faculty, candidate, known_publications)
-    result = _call_api(prompt, api_key)
+    result = _call_api(prompt)
 
     if result:
         result["faculty_id"] = faculty.get("faculty_id")
@@ -116,20 +115,15 @@ def score_candidate(faculty, candidate, known_publications=None, api_key=None):
     return result
 
 
-def score_batch(faculty, candidates, known_publications=None, api_key=None):
+def score_batch(faculty, candidates, known_publications=None):
     """Score multiple candidate publications for one faculty member.
 
     Returns list of score dicts. Low-confidence results (< 0.7) are flagged
     for human review.
     """
-    api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        logger.error("ANTHROPIC_API_KEY not set. Cannot run LLM disambiguation.")
-        return []
-
     scores = []
     for candidate in candidates:
-        result = score_candidate(faculty, candidate, known_publications, api_key)
+        result = score_candidate(faculty, candidate, known_publications)
         if result:
             if result.get("confidence", 0) < 0.7:
                 result["needs_human_review"] = True

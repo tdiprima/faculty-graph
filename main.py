@@ -96,10 +96,6 @@ def run_disambiguate(paths):
     from src.disambiguate.scorer import score_batch, save_scores
     import json
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        logger.error("ANTHROPIC_API_KEY not set. Cannot run disambiguation.")
-        sys.exit(1)
-
     faculty_list = load_seed_faculty(paths["seed_csv"])
     output_dir = Path(paths["disambig_output"])
     output_dir.mkdir(parents=True, exist_ok=True)
