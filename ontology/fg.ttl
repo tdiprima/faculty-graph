@@ -1,0 +1,475 @@
+# Faculty Graph vocabulary.
+#
+# Every fg: term this pipeline emits is defined here with a label, a comment, a
+# domain, and a range. The point is not ceremony: a term with no stated domain
+# and range cannot be mapped onto another model without guessing, and the whole
+# claim this vocabulary makes is that it maps cleanly.
+#
+# Alignment is stated at the strength the semantics actually support:
+#
+#   owl:equivalentProperty  the two terms mean the same thing; a reasoner may
+#                           substitute one for the other freely.
+#   rdfs:subPropertyOf      this term is narrower; every fg: statement implies
+#                           the aligned one, but not the reverse.
+#   rdfs:seeAlso            related and worth mapping in an ETL, but not
+#                           interchangeable. Claiming more would be wrong.
+#
+# tests/test_ontology.py checks this file against what the code emits, so a term
+# added to the converter without being defined here fails the build.
+
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf:    <http://xmlns.com/foaf/0.1/> .
+@prefix bibo:    <http://purl.org/ontology/bibo/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix prov:    <http://www.w3.org/ns/prov#> .
+@prefix org:     <http://www.w3.org/ns/org#> .
+@prefix vivo:    <http://vivoweb.org/ontology/core#> .
+@prefix schema:  <https://schema.org/> .
+@prefix fg:      <http://example.org/faculty-graph/> .
+
+<http://example.org/faculty-graph/>
+    a                   owl:Ontology ;
+    rdfs:label          "Faculty Graph vocabulary" ;
+    rdfs:comment        """Terms for publication assertions, authorship, organizations, and
+cross-source reconciliation. Standard vocabularies are used wherever one fits;
+fg: terms exist only where no standard term carries the needed meaning — chiefly
+the provenance layer, which records who claimed what and how sure we are.""" ;
+    owl:versionInfo     "0.2.0" .
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Classes
+# ═══════════════════════════════════════════════════════════════════════
+
+fg:PublicationAssertion
+    a                   owl:Class ;
+    rdfs:label          "Publication assertion" ;
+    rdfs:comment        """One source's claim that one person authored one work. Sources
+disagree, and a person may be wrongly matched, so the claim is a node in its own
+right rather than a direct person-to-work edge. Every harvested record produces
+exactly one assertion, which is what lets the graph say a work is claimed by
+three sources and rejected by a human without contradiction.""" ;
+    rdfs:subClassOf     prov:Entity ;
+    rdfs:seeAlso        rdf:Statement .
+
+fg:Authorship
+    a                   owl:Class ;
+    rdfs:label          "Authorship" ;
+    rdfs:comment        """One person's contribution to one work, carrying their position in
+the author list and the institution they were affiliated with at the time. An
+author's institution is a fact about that author on that paper, not a standing
+fact about the person: people move, and the paper records where they were.""" ;
+    rdfs:subClassOf     prov:Entity ;
+    rdfs:seeAlso        vivo:Authorship ,
+                        org:Membership .
+
+fg:Organization
+    a                   owl:Class ;
+    rdfs:label          "Organization" ;
+    rdfs:comment        """A university, institute, department, or other body credited on a
+work or hosting a person. Identified by its ROR IRI when one is known, and by a
+locally minted IRI otherwise; fg:identifierKind records which.""" ;
+    rdfs:subClassOf     org:Organization ,
+                        foaf:Organization .
+
+fg:MatchAssertion
+    a                   owl:Class ;
+    rdfs:label          "Match assertion" ;
+    rdfs:comment        """The pipeline's own conclusion that two records refer to the same
+thing, carrying the method and confidence behind it. Kept separate from what
+sources said, and emitted into its own graph, so that withdrawing a conclusion
+means not loading one file rather than re-harvesting.""" ;
+    rdfs:subClassOf     prov:Entity .
+
+fg:AssertionStatus
+    a                   owl:Class ;
+    rdfs:label          "Assertion status" ;
+    rdfs:comment        "How much a publication assertion is to be trusted." .
+
+fg:DataSource
+    a                   owl:Class ;
+    rdfs:label          "Data source" ;
+    rdfs:comment        "A service a publication record was harvested from." ;
+    rdfs:subClassOf     prov:Agent .
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Assertion status individuals
+# ═══════════════════════════════════════════════════════════════════════
+
+fg:authoritative
+    a                   fg:AssertionStatus ;
+    rdfs:label          "authoritative" ;
+    rdfs:comment        "Found through an identifier that binds the work to the person, such as an ORCID iD." .
+
+fg:candidate
+    a                   fg:AssertionStatus ;
+    rdfs:label          "candidate" ;
+    rdfs:comment        "Found by name search. Plausible, unconfirmed, and not to be published as fact." .
+
+fg:verified
+    a                   fg:AssertionStatus ;
+    rdfs:label          "verified" ;
+    rdfs:comment        "A human confirmed this assertion is correct." .
+
+fg:rejected
+    a                   fg:AssertionStatus ;
+    rdfs:label          "rejected" ;
+    rdfs:comment        "A human determined this is the wrong person or the wrong work. Never silently re-added by a later harvest." .
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Data source individuals
+# ═══════════════════════════════════════════════════════════════════════
+
+fg:ORCID
+    a                   fg:DataSource ;
+    rdfs:label          "ORCID" ;
+    rdfs:seeAlso        <https://orcid.org> .
+
+fg:PubMed
+    a                   fg:DataSource ;
+    rdfs:label          "PubMed" ;
+    rdfs:seeAlso        <https://pubmed.ncbi.nlm.nih.gov> .
+
+fg:OpenAlex
+    a                   fg:DataSource ;
+    rdfs:label          "OpenAlex" ;
+    rdfs:seeAlso        <https://openalex.org> .
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Assertion properties
+# ═══════════════════════════════════════════════════════════════════════
+
+fg:faculty
+    a                   owl:ObjectProperty ;
+    rdfs:label          "faculty" ;
+    rdfs:comment        "The person a publication assertion is about." ;
+    rdfs:domain         fg:PublicationAssertion ;
+    rdfs:range          foaf:Person .
+
+fg:work
+    a                   owl:ObjectProperty ;
+    rdfs:label          "work" ;
+    rdfs:comment        """The publication an assertion or an authorship is about.
+
+Domain is stated as a union deliberately. Two separate rdfs:domain statements
+would be read as an intersection, which would wrongly infer that every subject
+is both an assertion and an authorship.""" ;
+    rdfs:domain         [ a owl:Class ;
+                          owl:unionOf ( fg:PublicationAssertion fg:Authorship ) ] ;
+    rdfs:range          bibo:Document .
+
+fg:status
+    a                   owl:ObjectProperty ;
+    rdfs:label          "status" ;
+    rdfs:comment        "How far this assertion has been confirmed." ;
+    rdfs:domain         fg:PublicationAssertion ;
+    rdfs:range          fg:AssertionStatus .
+
+fg:source
+    a                   owl:ObjectProperty ;
+    rdfs:label          "source" ;
+    rdfs:comment        "The service this claim came from. Stated as a union domain for the same reason as fg:work." ;
+    rdfs:domain         [ a owl:Class ;
+                          owl:unionOf ( fg:PublicationAssertion fg:MatchAssertion ) ] ;
+    rdfs:range          fg:DataSource ;
+    rdfs:subPropertyOf  prov:wasAttributedTo .
+
+fg:reportedBy
+    a                   owl:ObjectProperty ;
+    rdfs:label          "reported by" ;
+    rdfs:comment        "The source that reported this work node, in a per-source graph where each source's records are kept apart." ;
+    rdfs:domain         bibo:Document ;
+    rdfs:range          fg:DataSource ;
+    rdfs:subPropertyOf  prov:wasAttributedTo .
+
+fg:harvestedAt
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "harvested at" ;
+    rdfs:comment        "When this record was fetched from its source." ;
+    rdfs:domain         fg:PublicationAssertion ;
+    rdfs:range          xsd:dateTime ;
+    rdfs:seeAlso        prov:generatedAtTime .
+
+fg:searchMethod
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "search method" ;
+    rdfs:comment        """How the record was found: "orcid" for an identifier search, "name"
+for a name search. This is what fg:status is derived from, kept alongside it so
+the derivation can be checked rather than trusted.""" ;
+    rdfs:domain         fg:PublicationAssertion ;
+    rdfs:range          xsd:string .
+
+fg:reviewedBy
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "reviewed by" ;
+    rdfs:comment        "Who made the human review decision on this assertion." ;
+    rdfs:domain         fg:PublicationAssertion ;
+    rdfs:range          xsd:string .
+
+fg:reviewedAt
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "reviewed at" ;
+    rdfs:comment        "When the human review decision was made." ;
+    rdfs:domain         fg:PublicationAssertion ;
+    rdfs:range          xsd:dateTime .
+
+fg:reviewNote
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "review note" ;
+    rdfs:comment        "The reviewer's stated reason. Kept because a rejection without a reason cannot be re-evaluated later." ;
+    rdfs:domain         fg:PublicationAssertion ;
+    rdfs:range          xsd:string .
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Person properties
+# ═══════════════════════════════════════════════════════════════════════
+
+fg:facultyId
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "faculty identifier" ;
+    rdfs:comment        "The local identifier from the faculty seed list. One external identifier among several on a person, with no more standing than an ORCID iD." ;
+    rdfs:domain         foaf:Person ;
+    rdfs:range          xsd:string ;
+    rdfs:subPropertyOf  dcterms:identifier .
+
+fg:orcidId
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "ORCID iD" ;
+    rdfs:comment        "The person's ORCID iD in bare form, without the https://orcid.org/ prefix." ;
+    rdfs:domain         foaf:Person ;
+    rdfs:range          xsd:string ;
+    rdfs:subPropertyOf  dcterms:identifier ;
+    owl:equivalentProperty vivo:orcidId .
+
+fg:department
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "department" ;
+    rdfs:comment        """The department name exactly as the seed list gave it. Kept alongside
+the org:memberOf link to the department resource: the string is what the source
+said, the link is what we concluded it meant, and dropping either would make the
+conclusion unauditable.""" ;
+    rdfs:domain         foaf:Person ;
+    rdfs:range          xsd:string .
+
+fg:nameSource
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "name source" ;
+    rdfs:comment        """Where this person's name parts came from: "structured" when the
+source stated family and given names separately, "display" when a rendered
+string was split and the split may be wrong. Consumers that care about name
+accuracy must check this before trusting foaf:familyName.""" ;
+    rdfs:domain         foaf:Person ;
+    rdfs:range          xsd:string .
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Authorship properties
+# ═══════════════════════════════════════════════════════════════════════
+
+fg:author
+    a                   owl:ObjectProperty ;
+    rdfs:label          "author" ;
+    rdfs:comment        "The person who contributed." ;
+    rdfs:domain         fg:Authorship ;
+    rdfs:range          foaf:Person ;
+    rdfs:seeAlso        dcterms:creator .
+
+fg:position
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "position" ;
+    rdfs:comment        "One-based position in the author list. Order carries meaning in most disciplines, so it is recorded rather than left to the serialisation." ;
+    rdfs:domain         fg:Authorship ;
+    rdfs:range          xsd:integer ;
+    rdfs:seeAlso        vivo:rank .
+
+fg:authorRole
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "author role" ;
+    rdfs:comment        """The source's own label for the position, such as "first", "middle",
+or "last". Kept separate from fg:position because a source may give one without
+the other.""" ;
+    rdfs:domain         fg:Authorship ;
+    rdfs:range          xsd:string .
+
+fg:isCorresponding
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "is corresponding author" ;
+    rdfs:comment        "Whether this author was named as corresponding on the work." ;
+    rdfs:domain         fg:Authorship ;
+    rdfs:range          xsd:boolean .
+
+fg:affiliatedWith
+    a                   owl:ObjectProperty ;
+    rdfs:label          "affiliated with" ;
+    rdfs:comment        "The organization credited for this author on this work." ;
+    rdfs:domain         fg:Authorship ;
+    rdfs:range          fg:Organization ;
+    rdfs:seeAlso        org:organization ,
+                        schema:affiliation .
+
+fg:affiliationRaw
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "raw affiliation" ;
+    rdfs:comment        """An affiliation line exactly as the source published it, unparsed. A
+line like "Dept of Pathology, Example University, NY 11794, USA" names
+several organizations at once; deciding which is reconciliation work, so the
+string is kept verbatim until then rather than being guessed at on ingest.""" ;
+    rdfs:domain         fg:Authorship ;
+    rdfs:range          xsd:string .
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Organization properties
+# ═══════════════════════════════════════════════════════════════════════
+
+fg:rorId
+    a                   owl:ObjectProperty ;
+    rdfs:label          "ROR identifier" ;
+    rdfs:comment        "The organization's Research Organization Registry IRI. Emitted as an IRI, not a string, because it resolves." ;
+    rdfs:domain         fg:Organization ;
+    rdfs:range          owl:Thing ;
+    rdfs:subPropertyOf  org:identifier ;
+    rdfs:seeAlso        <https://ror.org> .
+
+fg:identifierKind
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "identifier kind" ;
+    rdfs:comment        """Where this organization's identity came from: "ror" when a registry
+names it, "local" when the IRI was minted from a name and is a candidate for
+reconciliation. A consumer must not treat a local IRI as a stable global
+identifier.""" ;
+    rdfs:domain         fg:Organization ;
+    rdfs:range          xsd:string .
+
+fg:countryCode
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "country code" ;
+    rdfs:comment        "ISO 3166-1 alpha-2 country code for the organization." ;
+    rdfs:domain         fg:Organization ;
+    rdfs:range          xsd:string .
+
+fg:orgType
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "organization type" ;
+    rdfs:comment        "The source's classification of the organization, such as \"education\" or \"healthcare\"." ;
+    rdfs:domain         fg:Organization ;
+    rdfs:range          xsd:string .
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Work properties
+# ═══════════════════════════════════════════════════════════════════════
+
+fg:workType
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "work type" ;
+    rdfs:comment        "The source's own type label for the work, kept unmapped so a source's vocabulary is never silently reinterpreted." ;
+    rdfs:domain         bibo:Document ;
+    rdfs:range          xsd:string ;
+    rdfs:seeAlso        dcterms:type .
+
+fg:journal
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "journal title" ;
+    rdfs:comment        """The containing publication's title as a string. Modelling the journal
+as a resource with its own ISSN identity is deliberate future work; until then
+this stays a literal rather than a half-identified node.""" ;
+    rdfs:domain         bibo:Document ;
+    rdfs:range          xsd:string ;
+    rdfs:seeAlso        dcterms:isPartOf .
+
+fg:openAlexId
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "OpenAlex identifier" ;
+    rdfs:comment        "The work's OpenAlex identifier in bare form." ;
+    rdfs:domain         bibo:Document ;
+    rdfs:range          xsd:string ;
+    rdfs:subPropertyOf  dcterms:identifier .
+
+fg:citedByCount
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "cited by count" ;
+    rdfs:comment        "Citation count as one source reported it at harvest time. A measurement, not a property of the work: it changes, and sources disagree." ;
+    rdfs:domain         bibo:Document ;
+    rdfs:range          xsd:integer .
+
+fg:externalId
+    a                   owl:ObjectProperty ;
+    rdfs:label          "external identifier" ;
+    rdfs:comment        """An identifier from another system, as a node pairing fg:idType with
+fg:idValue. Used for identifiers with no dedicated property, and for alternate
+DOIs and PMIDs that survived a merge — a deposit DOI is a real citable
+identifier and is not discarded.""" ;
+    rdfs:domain         bibo:Document ;
+    rdfs:range          owl:Thing ;
+    rdfs:subPropertyOf  dcterms:identifier .
+
+fg:idType
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "identifier type" ;
+    rdfs:comment        "Which identifier scheme an fg:externalId node belongs to." ;
+    rdfs:range          xsd:string .
+
+fg:idValue
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "identifier value" ;
+    rdfs:comment        "The identifier itself, in whatever form the source published it." ;
+    rdfs:range          xsd:string .
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Reconciliation properties
+# ═══════════════════════════════════════════════════════════════════════
+
+fg:matchedRecord
+    a                   owl:ObjectProperty ;
+    rdfs:label          "matched record" ;
+    rdfs:comment        "The per-source node this match assertion is about." ;
+    rdfs:domain         fg:MatchAssertion ;
+    rdfs:range          owl:Thing .
+
+fg:matchedTo
+    a                   owl:ObjectProperty ;
+    rdfs:label          "matched to" ;
+    rdfs:comment        "The node the matched record is claimed to be the same as." ;
+    rdfs:domain         fg:MatchAssertion ;
+    rdfs:range          owl:Thing .
+
+fg:matchMethod
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "match method" ;
+    rdfs:comment        """What actually joined the records: "doi", "pmid", "title", or
+"exact-name". This names the shared key, not merely a key each record happens to
+carry — two records that each have a DOI but not the same DOI were not joined by
+DOI.""" ;
+    rdfs:domain         fg:MatchAssertion ;
+    rdfs:range          xsd:string .
+
+fg:matchConfidence
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "match confidence" ;
+    rdfs:comment        "How far the match is trusted, from 0.0 to 1.0. Only a match at 1.0 is additionally asserted as owl:sameAs." ;
+    rdfs:domain         fg:MatchAssertion ;
+    rdfs:range          xsd:decimal .
+
+fg:needsHumanReview
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "needs human review" ;
+    rdfs:comment        "Present and true when the pipeline is not confident enough to act on this match unaided." ;
+    rdfs:domain         fg:MatchAssertion ;
+    rdfs:range          xsd:boolean .
+
+fg:reconciledAt
+    a                   owl:DatatypeProperty ;
+    rdfs:label          "reconciled at" ;
+    rdfs:comment        "When this match assertion was made." ;
+    rdfs:domain         fg:MatchAssertion ;
+    rdfs:range          xsd:dateTime ;
+    rdfs:seeAlso        prov:generatedAtTime .

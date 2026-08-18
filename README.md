@@ -31,6 +31,8 @@ faculty-graph/
 ├── docs/
 │   ├── questions.md          # Open questions for boss/team
 │   ├── decisions.md          # Architectural decisions made
+│   ├── roadmap.md            # Phased plan from the review feedback
+│   ├── modeling-rules.md     # Commitments the model makes, and their costs
 │   ├── sources.md            # API notes and data source docs
 │   ├── deployment.md         # Server deployment guide
 │   └── qlever-setup.md       # QLever install and indexing guide
@@ -51,6 +53,8 @@ faculty-graph/
 │       ├── previews/         # HTML faculty preview pages
 │       ├── disambiguation/   # LLM scoring results
 │       └── logs/             # Harvest run logs
+├── ontology/
+│   └── fg.ttl                # The fg: vocabulary, with alignment axioms
 ├── queries/
 │   ├── publications-by-faculty.rq
 │   ├── rejected-matches.rq
@@ -287,6 +291,28 @@ Free-text affiliation lines from PubMed are deliberately *not* turned into
 organizations. A string like `"Dept of Pathology, Example University, NY
 11794, USA"` names several organizations at once, so it is kept verbatim as
 `fg:affiliationRaw` for a later reconciliation pass to interpret.
+
+### The Vocabulary
+
+`ontology/fg.ttl` defines every `fg:` term with a label, comment, domain, and
+range, and aligns each to standard vocabularies (BIBO, Dublin Core, PROV-O, W3C
+Org, FOAF, VIVO, schema.org) at the strength the semantics support:
+`owl:equivalentProperty` only for genuine identity, `rdfs:subPropertyOf` for
+narrowing, `rdfs:seeAlso` where the relationship is real but the terms are not
+interchangeable. Over-claiming equivalence would make the model harder to map,
+not easier.
+
+`fg:` terms exist only where no standard term carries the meaning — chiefly the
+provenance layer that records who claimed what and how sure we are. Everything
+else uses the standard vocabulary directly.
+
+`tests/test_ontology.py` compares the file against what the code emits in both
+directions, so a term added to the converter without a definition fails the
+build, and so does a definition nothing uses.
+
+`docs/modeling-rules.md` states the commitments behind the shape — why names are
+never concatenated, why conclusions live apart from observations, why confidence
+reflects the joining key — each with its cost, plus the known gaps.
 
 ### Reconciliation Is Its Own Phase
 

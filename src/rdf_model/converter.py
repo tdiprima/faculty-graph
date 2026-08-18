@@ -351,7 +351,7 @@ def assertion_to_turtle(faculty_id, publication, harvest_timestamp, work_uri=Non
     """Generate Turtle triples for a publication assertion.
 
     work_uri is supplied by the caller when this record was merged into another
-    record's work, so the assertion points at the surviving fg:Work rather than
+    record's work, so the assertion points at the surviving work node rather than
     minting a duplicate one from its own identifiers.
     """
     source = publication.get("source", "unknown")
@@ -499,7 +499,7 @@ def coauthor_to_turtle(publication, registry=None, work_uri=None):
 def convert_faculty_to_rdf(faculty, publications, harvest_timestamp):
     """Convert one faculty member's publications to Turtle string.
 
-    Records describing the same work are merged into a single fg:Work, but every
+    Records describing the same work are merged into a single work node, but every
     harvested record still emits its own assertion: the merge removes duplicate
     works from the graph without erasing which source claimed what.
     """

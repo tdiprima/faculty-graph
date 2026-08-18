@@ -107,7 +107,7 @@ This matches the "keep it per source, connect it later" strategy.
 4. **Keep every merge reversible.** Because links live in their own graph, a bad
    reconciliation is dropped by reloading one file, not by re-harvesting.
 
-### Phase 4 — Write down the ontology
+### Phase 4 — Write down the ontology — **done**
 
 Needed before the ontology group's discussion, so we arrive with something
 concrete rather than a description.
