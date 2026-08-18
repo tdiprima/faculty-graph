@@ -6,6 +6,7 @@ to fetch would write a truncated result set into the graph as authoritative.
 
 import json
 from urllib.error import HTTPError, URLError
+from urllib.parse import unquote_plus
 
 import pytest
 
@@ -181,3 +182,48 @@ def test_faculty_without_orcid_is_harvested_by_name(monkeypatch, tmp_path, facul
 
     assert "display_name.search" in requested[0]
     assert publications[0]["assertion_status"] == "candidate"
+
+
+def test_name_search_is_constrained_to_the_institution(monkeypatch, tmp_path,
+                                                       faculty_without_orcid):
+    """Without the institution filter, 'Grace Hopper' pulls in every namesake."""
+    requested = _serve(monkeypatch, [_page([{"title": "A", "doi": "10.1/a"}])])
+
+    client.harvest_faculty(faculty_without_orcid, tmp_path)
+
+    query = unquote_plus(requested[0])
+    assert "authorships.author.display_name.search:Grace Hopper" in query
+    assert "authorships.institutions.display_name.search:Example University" in query
+
+
+def test_name_and_institution_are_anded_in_one_filter(monkeypatch):
+    """OpenAlex ANDs comma-separated terms only within a single filter param."""
+    requested = _serve(monkeypatch, [_page([])])
+
+    client.fetch_works_by_name("Grace Hopper")
+
+    query = unquote_plus(requested[0])
+    filter_value = query.split("filter=", 1)[1].split("&", 1)[0]
+    assert filter_value.count("authorships.") == 2
+    assert query.count("filter=") == 1
+
+
+def test_name_search_institution_is_overridable(monkeypatch):
+    requested = _serve(monkeypatch, [_page([])])
+
+    client.fetch_works_by_name("Grace Hopper", institution="Yale University")
+
+    assert "Yale University" in unquote_plus(requested[0])
+    assert "Example University" not in unquote_plus(requested[0])
+
+
+def test_orcid_search_is_not_institution_constrained(monkeypatch, tmp_path,
+                                                     faculty_with_orcid):
+    """An iD is authoritative; filtering it by affiliation would drop prior work."""
+    requested = _serve(monkeypatch, [_page([{"title": "A", "doi": "10.1/a"}])])
+
+    client.harvest_faculty(faculty_with_orcid, tmp_path)
+
+    query = unquote_plus(requested[0])
+    assert "author.orcid:https://orcid.org/0000-0002-1825-0097" in query
+    assert "institutions.display_name" not in query
