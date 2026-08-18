@@ -5,6 +5,8 @@ import logging
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
+from src.names import structured_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,18 +37,70 @@ def _parse_article_date(article):
     return None
 
 
+def _parse_author_orcid(author):
+    """Extract an author's ORCID iD from their Identifier elements, if present."""
+    for identifier in author.findall("Identifier"):
+        if identifier.get("Source") != "ORCID":
+            continue
+        value = identifier.text.strip() if identifier.text else ""
+        if value:
+            return value.replace("https://orcid.org/", "").replace("http://orcid.org/", "")
+    return None
+
+
+def _parse_author_affiliations(author):
+    """Extract the raw affiliation strings listed for one author.
+
+    PubMed gives affiliation as free text with no identifier, so the string is
+    kept exactly as published. Resolving it to an institution is a separate
+    reconciliation step, not a parsing one.
+    """
+    affiliations = []
+    for affiliation_info in author.findall("AffiliationInfo"):
+        value = _get_text(affiliation_info, "Affiliation")
+        if value and value not in affiliations:
+            affiliations.append(value)
+    return affiliations
+
+
 def _parse_authors(author_list):
-    """Extract author names from AuthorList element."""
+    """Extract structured author records from an AuthorList element.
+
+    LastName and ForeName arrive as separate elements and stay separate: once
+    joined they cannot be reliably pulled apart again.
+    """
     if author_list is None:
         return []
+
     authors = []
-    for author in author_list.findall("Author"):
-        last = _get_text(author, "LastName", "")
-        fore = _get_text(author, "ForeName", "")
-        if last:
-            name = f"{fore} {last}".strip() if fore else last
-            authors.append(name)
+    for position, author in enumerate(author_list.findall("Author"), start=1):
+        family = _get_text(author, "LastName", "")
+        given = _get_text(author, "ForeName", "")
+        if not family:
+            continue
+
+        record = structured_name(given, family)
+        record["initials"] = _get_text(author, "Initials")
+        record["orcid"] = _parse_author_orcid(author)
+        record["affiliations"] = _parse_author_affiliations(author)
+        record["position"] = position
+        authors.append(record)
+
     return authors
+
+
+def _parse_journal_details(article):
+    """Extract container details: ISSN, volume, issue, and page range."""
+    details = {"issn": None, "volume": None, "issue": None, "pages": None}
+
+    journal = article.find("Journal")
+    if journal is not None:
+        details["issn"] = _get_text(journal, "ISSN")
+        details["volume"] = _get_text(journal, "JournalIssue/Volume")
+        details["issue"] = _get_text(journal, "JournalIssue/Issue")
+
+    details["pages"] = _get_text(article, "Pagination/MedlinePgn")
+    return details
 
 
 def _parse_article_ids(pubmed_data):
@@ -94,7 +148,8 @@ def parse_pubmed_xml(xml_string):
             continue
 
         journal = _get_text(article, "Journal/Title")
-        authors = _parse_authors(article.find("AuthorList"))
+        coauthors = _parse_authors(article.find("AuthorList"))
+        journal_details = _parse_journal_details(article)
         date = _parse_article_date(article)
 
         pubmed_data = article_elem.find("PubmedData")
@@ -112,7 +167,12 @@ def parse_pubmed_xml(xml_string):
             "date": date,
             "external_ids": external_ids,
             "journal": journal,
-            "authors": authors,
+            "issn": journal_details["issn"],
+            "volume": journal_details["volume"],
+            "issue": journal_details["issue"],
+            "pages": journal_details["pages"],
+            "authors": [author["name"] for author in coauthors],
+            "coauthors": coauthors,
         }
         publications.append(publication)
 

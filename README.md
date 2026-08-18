@@ -79,7 +79,7 @@ faculty-graph/
 
 ```bash
 # Install dependencies
-pip install -e .
+uv sync
 
 # Create your faculty seed list from the template
 cp data/seed/faculty.csv.example data/seed/faculty.csv
@@ -88,25 +88,52 @@ $EDITOR data/seed/faculty.csv
 # Tell the pipeline which institution to filter on
 export INSTITUTION_NAME="Your University"
 
-# Optional: install PyYAML for human review support
-pip install -e ".[review]"
+# Optional: add PyYAML for human review support
+uv sync --extra review
 
-# Run all harvesters (no API keys needed for public APIs)
-python3 main.py
-
-# Run a single source
-python3 main.py --source orcid
-python3 main.py --source pubmed
-python3 main.py --source openalex
-
-# Generate HTML preview pages
-python3 main.py --preview
-
-# Run LLM disambiguation (requires Ollama running with gemma4)
-python3 main.py --disambiguate
+# Run the whole pipeline: harvest every source, disambiguate, build previews
+uv run python3 main.py --full
 
 # Output lands in data/output/rdf/, data/raw/, and data/output/previews/
 # The combined graph is data/output/rdf/faculty-all.ttl (what the loaders read)
+```
+
+## Command Line Reference
+
+```text
+usage: main.py [--source {orcid,pubmed,openalex}] [--full] [--preview] [--disambiguate]
+```
+
+| Flag | Description |
+|---|---|
+| _(none)_ | Harvest every source and write RDF. No disambiguation, no previews. |
+| `--source {orcid,pubmed,openalex}` | Harvest only the named source. Repeat the flag to pick several. Default: all three. Also narrows which sources `--full` harvests. |
+| `--full` | Run every stage in order: harvest, disambiguate, generate previews. |
+| `--preview` | Generate HTML preview pages from data already in `data/raw/`. No network calls. |
+| `--disambiguate` | Score candidate matches with the local Ollama model. Reads `data/raw/`, so no network calls to the publication sources. |
+
+`--preview` and `--disambiguate` run standalone or together; combined, disambiguation
+runs first so the previews reflect the fresh scores. Both reload `data/raw/`, so you
+can re-run either one without re-harvesting.
+
+```bash
+# Harvest everything (default when no flag is given)
+uv run python3 main.py
+
+# Harvest a single source
+uv run python3 main.py --source orcid
+
+# Harvest two sources
+uv run python3 main.py --source pubmed --source openalex
+
+# Full pipeline, but only from ORCID
+uv run python3 main.py --full --source orcid
+
+# Rebuild HTML previews from already-harvested data
+uv run python3 main.py --preview
+
+# Re-score candidate matches (requires Ollama running with gemma4)
+uv run python3 main.py --disambiguate
 ```
 
 ## Environment Variables
@@ -165,8 +192,8 @@ own, so it is never filtered by institution.
 ## Tests
 
 ```bash
-pip install -e ".[dev]"
-pytest
+uv sync --extra dev
+uv run pytest
 ```
 
 The suite is offline and deterministic: every source response is built from
@@ -175,7 +202,7 @@ reads `data/raw/`.
 
 `tests/test_converter.py` parses all generated Turtle with `rdflib`. Those tests
 skip if `rdflib` is missing rather than failing, but a triple store will reject
-output they would have caught, so install the `dev` extra before trusting a run.
+output they would have caught, so sync the `dev` extra before trusting a run.
 
 ## Human Review
 

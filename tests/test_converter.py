@@ -413,3 +413,134 @@ def test_unrelated_works_are_still_separate_nodes():
     graph = parse(turtle)
 
     assert len(works_in(graph)) == 2
+
+
+# ── Phase 1: bibliographic detail and author name parts ──
+
+
+BIBO = rdflib.Namespace("http://purl.org/ontology/bibo/")
+FOAF = rdflib.Namespace("http://xmlns.com/foaf/0.1/")
+
+
+def objects_for(graph, predicate):
+    """Return every object asserted with this predicate, as strings."""
+    return sorted(str(o) for o in graph.objects(None, predicate))
+
+
+def test_volume_issue_and_issn_reach_the_graph():
+    graph = parse(render([publication(
+        journal="Journal of Testing",
+        issn="1234-5678",
+        volume="12",
+        issue="3",
+    )]))
+    assert objects_for(graph, BIBO.volume) == ["12"]
+    assert objects_for(graph, BIBO.issue) == ["3"]
+    assert objects_for(graph, BIBO.issn) == ["1234-5678"]
+
+
+def test_page_range_emits_printed_form_and_endpoints():
+    graph = parse(render([publication(pages="100-115")]))
+    assert objects_for(graph, BIBO.pages) == ["100-115"]
+    assert objects_for(graph, BIBO.pageStart) == ["100"]
+    assert objects_for(graph, BIBO.pageEnd) == ["115"]
+
+
+def test_single_page_emits_no_endpoints():
+    graph = parse(render([publication(pages="e1000")]))
+    assert objects_for(graph, BIBO.pages) == ["e1000"]
+    assert objects_for(graph, BIBO.pageStart) == []
+
+
+def test_missing_bibliographic_fields_emit_no_triples():
+    graph = parse(render([publication()]))
+    assert objects_for(graph, BIBO.volume) == []
+    assert objects_for(graph, BIBO.pages) == []
+
+
+@pytest.mark.parametrize("hostile", [
+    'v1" ; fg:injected "yes',
+    "12\\",
+    'x" .\n<http://evil> <http://evil> "',
+])
+def test_hostile_bibliographic_values_are_escaped(hostile):
+    graph = parse(render([publication(volume=hostile, pages=hostile)]))
+    assert objects_for(graph, BIBO.volume) == [hostile]
+
+
+def test_author_name_parts_are_emitted_separately():
+    graph = parse(render([publication(coauthors=[{
+        "name": "Ada Lovelace",
+        "given_name": "Ada",
+        "family_name": "Lovelace",
+        "name_source": "structured",
+    }])]))
+    assert objects_for(graph, FOAF.givenName) == ["Ada"]
+    assert objects_for(graph, FOAF.familyName) == ["Lovelace"]
+    assert "Ada Lovelace" in objects_for(graph, FOAF.name)
+
+
+def test_an_unsplit_name_emits_no_name_part_triples():
+    graph = parse(render([publication(coauthors=[{
+        "name": "Prince",
+        "given_name": None,
+        "family_name": None,
+        "name_source": "display",
+    }])]))
+    assert objects_for(graph, FOAF.givenName) == []
+    assert objects_for(graph, FOAF.familyName) == []
+    assert "Prince" in objects_for(graph, FOAF.name)
+
+
+def test_institution_with_a_ror_id_reaches_the_graph():
+    turtle = render([publication(coauthors=[{
+        "name": "Ada Lovelace",
+        "institutions": [{
+            "display_name": "Example University",
+            "ror": "https://ror.org/abc123456",
+            "country_code": "US",
+        }],
+    }])])
+    graph = parse(turtle)
+    ror_id = rdflib.URIRef(f"{converter.FG_NAMESPACE}rorId")
+    org_name = rdflib.URIRef(f"{converter.FG_NAMESPACE}orgName")
+    assert objects_for(graph, ror_id) == ["https://ror.org/abc123456"]
+    assert objects_for(graph, org_name) == ["Example University"]
+
+
+def test_institution_without_a_ror_id_still_records_its_name():
+    turtle = render([publication(coauthors=[{
+        "name": "Ada Lovelace",
+        "institutions": [{"display_name": "Some Institute", "ror": None}],
+    }])])
+    graph = parse(turtle)
+    ror_id = rdflib.URIRef(f"{converter.FG_NAMESPACE}rorId")
+    org_name = rdflib.URIRef(f"{converter.FG_NAMESPACE}orgName")
+    assert objects_for(graph, org_name) == ["Some Institute"]
+    assert objects_for(graph, ror_id) == []
+
+
+def test_raw_pubmed_affiliation_is_kept_verbatim():
+    affiliation = "Department of Computing, Example University, NY, USA"
+    turtle = render([publication(coauthors=[{
+        "name": "Ada Lovelace",
+        "affiliations": [affiliation],
+    }])])
+    graph = parse(turtle)
+    affiliation_raw = rdflib.URIRef(f"{converter.FG_NAMESPACE}affiliationRaw")
+    assert objects_for(graph, affiliation_raw) == [affiliation]
+
+
+def test_a_coauthor_with_no_affiliation_still_parses():
+    graph = parse(render([publication(coauthors=[{"name": "Ada Lovelace"}])]))
+    assert "Ada Lovelace" in objects_for(graph, FOAF.name)
+
+
+def test_hostile_affiliation_string_is_escaped():
+    hostile = 'MIT" ; fg:injected "yes'
+    graph = parse(render([publication(coauthors=[{
+        "name": "Ada Lovelace",
+        "affiliations": [hostile],
+    }])]))
+    injected = rdflib.URIRef(f"{converter.FG_NAMESPACE}injected")
+    assert list(graph.objects(None, injected)) == []

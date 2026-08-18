@@ -40,6 +40,7 @@ DEPOSIT_TYPES = ("other", "dataset", "supplementary-materials")
 # collect_alternate_ids, never overwritten by a gap fill.
 GAP_FILLABLE_FIELDS = (
     "journal",
+    "issn",
     "date",
     "type",
     "abstract",
@@ -48,6 +49,7 @@ GAP_FILLABLE_FIELDS = (
     "pages",
     "publisher",
     "url",
+    "coauthors",
 )
 
 # OpenAlex sometimes names the index it pulled a record from as the container
@@ -285,6 +287,8 @@ def _is_empty(value):
         return True
     if isinstance(value, str):
         return not value.strip()
+    if isinstance(value, (list, tuple, dict, set)):
+        return not value
     return False
 
 

@@ -45,6 +45,13 @@ def orcid_works(entries):
     return {"group": groups, "path": "/0000-0000-0000-0000/works"}
 
 
+def _openalex_institution(institution):
+    """Build one authorship institution from a display name or a full dict."""
+    if isinstance(institution, str):
+        return {"display_name": institution}
+    return dict(institution)
+
+
 def openalex_works(entries, next_cursor=None):
     """Build an OpenAlex /works response."""
     results = []
@@ -64,7 +71,19 @@ def openalex_works(entries, next_cursor=None):
         if entry.get("pmid"):
             work["ids"]["pmid"] = f"https://pubmed.ncbi.nlm.nih.gov/{entry['pmid']}"
         if entry.get("journal"):
-            work["primary_location"] = {"source": {"display_name": entry["journal"]}}
+            work["primary_location"] = {
+                "source": {
+                    "display_name": entry["journal"],
+                    "issn_l": entry.get("issn"),
+                }
+            }
+        if any(entry.get(field) for field in ("volume", "issue", "first_page", "last_page")):
+            work["biblio"] = {
+                "volume": entry.get("volume"),
+                "issue": entry.get("issue"),
+                "first_page": entry.get("first_page"),
+                "last_page": entry.get("last_page"),
+            }
         for author in entry.get("authors", []):
             work["authorships"].append({
                 "author": {
@@ -75,22 +94,72 @@ def openalex_works(entries, next_cursor=None):
                     ),
                 },
                 "institutions": [
-                    {"display_name": name} for name in author.get("institutions", [])
+                    _openalex_institution(institution)
+                    for institution in author.get("institutions", [])
                 ],
+                "is_corresponding": author.get("is_corresponding", False),
             })
         results.append(work)
 
     return {"results": results, "meta": {"next_cursor": next_cursor}}
 
 
+def _pubmed_author(author):
+    """Build one PubMed Author element.
+
+    Accepts the legacy (fore, last) tuple or a dict adding orcid and
+    affiliations.
+    """
+    if isinstance(author, dict):
+        fore = author.get("fore", "")
+        last = author.get("last", "")
+        orcid = author.get("orcid")
+        affiliations = author.get("affiliations", [])
+    else:
+        fore, last = author
+        orcid = None
+        affiliations = []
+
+    parts = [f"<LastName>{last}</LastName><ForeName>{fore}</ForeName>"]
+    if orcid:
+        parts.append(f'<Identifier Source="ORCID">{orcid}</Identifier>')
+    for affiliation in affiliations:
+        parts.append(
+            f"<AffiliationInfo><Affiliation>{affiliation}</Affiliation></AffiliationInfo>"
+        )
+    return f"<Author>{''.join(parts)}</Author>"
+
+
+def _pubmed_journal_body(entry):
+    """Build the Journal element body, including ISSN, volume, and issue."""
+    parts = []
+    if entry.get("issn"):
+        parts.append(f"<ISSN>{entry['issn']}</ISSN>")
+
+    issue_parts = []
+    if entry.get("volume"):
+        issue_parts.append(f"<Volume>{entry['volume']}</Volume>")
+    if entry.get("issue"):
+        issue_parts.append(f"<Issue>{entry['issue']}</Issue>")
+    if issue_parts:
+        parts.append(f"<JournalIssue>{''.join(issue_parts)}</JournalIssue>")
+
+    parts.append(f"<Title>{entry.get('journal', '')}</Title>")
+    return "".join(parts)
+
+
+def _pubmed_pagination(entry):
+    """Build the Pagination element, or nothing when no pages are given."""
+    if not entry.get("pages"):
+        return ""
+    return f"<Pagination><MedlinePgn>{entry['pages']}</MedlinePgn></Pagination>"
+
+
 def pubmed_xml(entries):
     """Build a PubMed efetch XML document."""
     articles = []
     for entry in entries:
-        authors = "".join(
-            f"<Author><LastName>{last}</LastName><ForeName>{fore}</ForeName></Author>"
-            for fore, last in entry.get("authors", [])
-        )
+        authors = "".join(_pubmed_author(author) for author in entry.get("authors", []))
         article_ids = "".join(
             f'<ArticleId IdType="{id_type}">{value}</ArticleId>'
             for id_type, value in entry.get("article_ids", {}).items()
@@ -107,8 +176,9 @@ def pubmed_xml(entries):
             f"<PMID>{entry.get('pmid', '1')}</PMID>"
             "<Article>"
             f"<ArticleTitle>{entry.get('title', '')}</ArticleTitle>"
-            f"<Journal><Title>{entry.get('journal', '')}</Title></Journal>"
+            f"<Journal>{_pubmed_journal_body(entry)}</Journal>"
             f"<AuthorList>{authors}</AuthorList>"
+            f"{_pubmed_pagination(entry)}"
             f"{date}"
             "</Article></MedlineCitation>"
             f"<PubmedData><ArticleIdList>{article_ids}</ArticleIdList></PubmedData>"

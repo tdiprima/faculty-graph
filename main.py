@@ -136,7 +136,7 @@ def parse_args():
     parser.add_argument(
         "--full",
         action="store_true",
-        help="Run everything: harvest all sources, disambiguate, generate previews.",
+        help="Run everything: harvest (all sources unless --source given), disambiguate, generate previews.",
     )
     parser.add_argument(
         "--preview",

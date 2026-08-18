@@ -119,6 +119,24 @@ def format_integer_literal(value):
         return None
 
 
+def _page_lines(pages):
+    """Emit the page range as printed, plus its endpoints when they parse out."""
+    if not pages:
+        return []
+
+    pages = str(pages).strip()
+    lines = [f'    bibo:pages          "{escape_turtle_string(pages)}" ;']
+
+    start, separator, end = pages.partition("-")
+    start = start.strip()
+    end = end.strip()
+    if separator and start and end:
+        lines.append(f'    bibo:pageStart      "{escape_turtle_string(start)}" ;')
+        lines.append(f'    bibo:pageEnd        "{escape_turtle_string(end)}" ;')
+
+    return lines
+
+
 def faculty_to_turtle(faculty):
     """Generate Turtle triples for a faculty member."""
     faculty_id = faculty["faculty_id"]
@@ -154,6 +172,17 @@ def publication_to_turtle(publication):
 
     if publication.get("journal"):
         lines.append(f'    fg:journal          "{escape_turtle_string(publication["journal"])}" ;')
+
+    if publication.get("issn"):
+        lines.append(f'    bibo:issn           "{escape_turtle_string(str(publication["issn"]))}" ;')
+
+    if publication.get("volume"):
+        lines.append(f'    bibo:volume         "{escape_turtle_string(str(publication["volume"]))}" ;')
+
+    if publication.get("issue"):
+        lines.append(f'    bibo:issue          "{escape_turtle_string(str(publication["issue"]))}" ;')
+
+    lines.extend(_page_lines(publication.get("pages")))
 
     date_literal = format_date_literal(publication.get("date"))
     if date_literal:
@@ -228,6 +257,44 @@ def assertion_to_turtle(faculty_id, publication, harvest_timestamp, work_uri=Non
     return "\n".join(lines)
 
 
+def _affiliation_lines(coauthor):
+    """Emit each affiliation exactly as its source stated it.
+
+    Phase 1 keeps affiliations as raw source values rather than resolving them to
+    organization resources: a PubMed affiliation is free text, an OpenAlex one
+    carries a ROR identifier, and deciding that the two name the same institution
+    is reconciliation work, not parsing work. Both forms are recorded so that
+    later phase has something to reconcile.
+    """
+    lines = []
+
+    for affiliation in coauthor.get("affiliations", []):
+        lines.append(
+            f'    fg:affiliationRaw   "{escape_turtle_string(str(affiliation))}" ;'
+        )
+
+    for institution in coauthor.get("institutions", []):
+        if isinstance(institution, str):
+            lines.append(
+                f'    fg:affiliationRaw   "{escape_turtle_string(institution)}" ;'
+            )
+            continue
+
+        display_name = institution.get("display_name")
+        if not display_name:
+            continue
+        parts = [f'fg:orgName "{escape_turtle_string(display_name)}"']
+        if institution.get("ror"):
+            parts.append(f'fg:rorId <{escape_turtle_string(str(institution["ror"]))}>')
+        if institution.get("country_code"):
+            parts.append(
+                f'fg:countryCode "{escape_turtle_string(str(institution["country_code"]))}"'
+            )
+        lines.append(f'    fg:affiliation      [ {" ; ".join(parts)} ] ;')
+
+    return lines
+
+
 def coauthor_to_turtle(publication):
     """Generate Turtle triples for coauthor relationships."""
     coauthors = publication.get("coauthors", [])
@@ -244,8 +311,21 @@ def coauthor_to_turtle(publication):
         lines.append(f"{coauthor_uri}")
         lines.append(f"    a                   foaf:Person ;")
         lines.append(f'    foaf:name           "{escape_turtle_string(name)}" ;')
+        if coauthor.get("given_name"):
+            lines.append(
+                f'    foaf:givenName      "{escape_turtle_string(str(coauthor["given_name"]))}" ;'
+            )
+        if coauthor.get("family_name"):
+            lines.append(
+                f'    foaf:familyName     "{escape_turtle_string(str(coauthor["family_name"]))}" ;'
+            )
+        if coauthor.get("name_source"):
+            lines.append(
+                f'    fg:nameSource       "{escape_turtle_string(str(coauthor["name_source"]))}" ;'
+            )
         if coauthor.get("orcid"):
             lines.append(f'    fg:orcidId          "{escape_turtle_string(str(coauthor["orcid"]))}" ;')
+        lines.extend(_affiliation_lines(coauthor))
         lines[-1] = lines[-1].rstrip(" ;") + " ."
         lines.append("")
         lines.append(f"{work_uri} dcterms:creator {coauthor_uri} .")
