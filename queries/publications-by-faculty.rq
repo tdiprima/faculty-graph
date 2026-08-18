@@ -1,0 +1,26 @@
+PREFIX fg:     <http://example.org/faculty-graph/>
+PREFIX fgdata: <http://example.org/faculty-graph/data/>
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX bibo:   <http://purl.org/ontology/bibo/>
+
+SELECT ?name ?title ?doi ?date ?status ?source
+WHERE {
+    ?assertion a fg:PublicationAssertion ;
+               fg:faculty ?faculty ;
+               fg:work ?work ;
+               fg:status ?statusNode ;
+               fg:source ?sourceNode .
+
+    ?faculty foaf:name ?name .
+    ?work dcterms:title ?title .
+
+    OPTIONAL { ?work bibo:doi ?doi }
+    OPTIONAL { ?work dcterms:date ?date }
+
+    ?statusNode rdfs:label ?status .
+    ?sourceNode rdfs:label ?source .
+
+    FILTER (?statusNode != fg:rejected)
+}
+ORDER BY ?name ?date

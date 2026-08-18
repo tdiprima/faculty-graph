@@ -1,0 +1,25 @@
+PREFIX fg:     <http://example.org/faculty-graph/>
+PREFIX fgdata: <http://example.org/faculty-graph/data/>
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX bibo:   <http://purl.org/ontology/bibo/>
+
+SELECT ?name ?title ?doi (GROUP_CONCAT(DISTINCT ?source; separator=", ") AS ?sources)
+WHERE {
+    ?assertion a fg:PublicationAssertion ;
+               fg:faculty ?faculty ;
+               fg:work ?work ;
+               fg:source ?sourceNode ;
+               fg:status ?statusNode .
+
+    ?faculty foaf:name ?name .
+    ?work dcterms:title ?title .
+    ?sourceNode rdfs:label ?source .
+
+    OPTIONAL { ?work bibo:doi ?doi }
+
+    FILTER (?statusNode != fg:rejected)
+}
+GROUP BY ?name ?title ?doi
+HAVING (COUNT(DISTINCT ?sourceNode) > 1)
+ORDER BY ?name

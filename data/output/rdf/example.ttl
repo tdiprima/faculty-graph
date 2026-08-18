@@ -1,0 +1,92 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf:   <http://xmlns.com/foaf/0.1/> .
+@prefix bibo:   <http://purl.org/ontology/bibo/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix prov:   <http://www.w3.org/ns/prov#> .
+@prefix fg:     <http://example.org/faculty-graph/> .
+@prefix fgdata: <http://example.org/faculty-graph/data/> .
+
+# ── Faculty Member ──────────────────────────────────────────────────
+
+fgdata:faculty/bmi-001
+    a                   foaf:Person ;
+    foaf:name           "Joel Saltz" ;
+    fg:facultyId        "bmi-001" ;
+    fg:department        "Biomedical Informatics" ;
+    fg:orcidId          "0000-0002-3451-2165" ;
+    foaf:mbox           <mailto:Joel.Saltz@stonybrookmedicine.edu> .
+
+# ── Publication 1 (authoritative from ORCID) ────────────────────────
+
+fgdata:work/doi-10.1038-s41591-019-0508-1
+    a                   bibo:AcademicArticle ;
+    dcterms:title       "Artificial intelligence in digital pathology" ;
+    bibo:doi            "10.1038/s41591-019-0508-1" ;
+    dcterms:date        "2019-08-05"^^xsd:date .
+
+fgdata:assertion/bmi-001-doi-10.1038-s41591-019-0508-1
+    a                   fg:PublicationAssertion ;
+    fg:faculty          fgdata:faculty/bmi-001 ;
+    fg:work             fgdata:work/doi-10.1038-s41591-019-0508-1 ;
+    fg:status           fg:authoritative ;
+    fg:source           fg:ORCID ;
+    fg:harvestedAt      "2026-08-18T12:00:00"^^xsd:dateTime ;
+    prov:wasAttributedTo fg:ORCID .
+
+# ── Publication 2 (rejected - wrong person) ─────────────────────────
+
+fgdata:work/doi-10.1234-fake-example
+    a                   bibo:AcademicArticle ;
+    dcterms:title       "Unrelated paper by different J. Saltz" ;
+    bibo:doi            "10.1234/fake-example" ;
+    dcterms:date        "2020-03-15"^^xsd:date .
+
+fgdata:assertion/bmi-001-doi-10.1234-fake-example
+    a                   fg:PublicationAssertion ;
+    fg:faculty          fgdata:faculty/bmi-001 ;
+    fg:work             fgdata:work/doi-10.1234-fake-example ;
+    fg:status           fg:rejected ;
+    fg:source           fg:PubMed ;
+    fg:harvestedAt      "2026-08-18T12:00:00"^^xsd:dateTime ;
+    fg:reviewedBy       "human" ;
+    fg:reviewedAt       "2026-08-18T14:00:00"^^xsd:dateTime ;
+    fg:reviewNote       "Different J. Saltz - not our faculty member" ;
+    prov:wasAttributedTo fg:PubMed .
+
+# ── Assertion Status Vocabulary ──────────────────────────────────────
+
+fg:candidate
+    a                   fg:AssertionStatus ;
+    rdfs:label          "candidate" ;
+    rdfs:comment        "Pipeline found a possible match, not yet reviewed." .
+
+fg:verified
+    a                   fg:AssertionStatus ;
+    rdfs:label          "verified" ;
+    rdfs:comment        "Human or authoritative source confirmed this is correct." .
+
+fg:rejected
+    a                   fg:AssertionStatus ;
+    rdfs:label          "rejected" ;
+    rdfs:comment        "Human says this is not the right person or publication." .
+
+fg:authoritative
+    a                   fg:AssertionStatus ;
+    rdfs:label          "authoritative" ;
+    rdfs:comment        "ORCID or another trusted source asserts this directly." .
+
+# ── Source Vocabulary ────────────────────────────────────────────────
+
+fg:ORCID
+    a                   fg:DataSource ;
+    rdfs:label          "ORCID" .
+
+fg:PubMed
+    a                   fg:DataSource ;
+    rdfs:label          "PubMed" .
+
+fg:OpenAlex
+    a                   fg:DataSource ;
+    rdfs:label          "OpenAlex" .

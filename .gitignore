@@ -9,5 +9,12 @@ wheels/
 # Virtual environments
 .venv
 
+# Raw API responses (large, regenerable)
+data/raw/
+
+# Generated RDF (regenerable, except example.ttl)
+data/output/rdf/faculty-orcid.ttl
+data/output/rdf/bmi-*.ttl
+
 # Other
 faculty-data-pipeline-solo-plan.md
