@@ -21,9 +21,13 @@ pip install -e .
 # Optional: set environment variables
 export NCBI_API_KEY=your_key       # higher PubMed rate limits
 export OPENALEX_EMAIL=your@email   # OpenAlex polite pool
-export ANTHROPIC_API_KEY=your_key  # LLM disambiguation (optional)
+export OLLAMA_URL=http://localhost:11434  # LLM disambiguation (optional)
 export LOG_LEVEL=INFO
 ```
+
+## QLever Setup
+
+See [qlever-setup.md](qlever-setup.md) for full QLever installation and configuration instructions (Docker, native build, Qleverfile config, re-indexing workflow).
 
 ## Fuseki Setup
 

@@ -1,15 +1,17 @@
 """Faculty Graph Pipeline - orchestrates harvesting, review, and RDF generation.
 
 Usage:
-    python main.py                     # Run all harvesters
+    python main.py                     # Run all harvesters + RDF output
+    python main.py --full              # Harvest + disambiguate + preview
     python main.py --source orcid      # Run ORCID only
     python main.py --source pubmed     # Run PubMed only
     python main.py --source openalex   # Run OpenAlex only
-    python main.py --preview           # Generate HTML previews
-    python main.py --disambiguate      # Run LLM disambiguation on candidates
+    python main.py --preview           # Generate HTML previews (standalone)
+    python main.py --disambiguate      # Run LLM disambiguation (standalone)
 """
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -41,7 +43,7 @@ def get_paths():
 
 
 def run_harvest(sources, paths):
-    """Run specified harvesters and generate RDF."""
+    """Run specified harvesters and generate RDF. Returns all_results for downstream use."""
     from src.harvest_orcid.client import load_seed_faculty, harvest_all as harvest_orcid
     from src.rdf_model.converter import convert_all_to_rdf
     from src.review.manager import ReviewManager
@@ -49,7 +51,7 @@ def run_harvest(sources, paths):
     faculty_list = load_seed_faculty(paths["seed_csv"])
     if not faculty_list:
         logger.error("No faculty found in %s", paths["seed_csv"])
-        return False
+        return None
 
     review_manager = ReviewManager(paths["reviews_yaml"])
     all_results = []
@@ -73,28 +75,29 @@ def run_harvest(sources, paths):
 
     if not all_results:
         logger.error("No data harvested from any source")
-        return False
+        return None
 
     logger.info("=== Generating RDF ===")
     convert_all_to_rdf(all_results, paths["rdf_output"], review_manager)
 
     total_pubs = sum(len(pubs) for _, pubs in all_results)
-    logger.info("Pipeline complete: %d total publication assertions", total_pubs)
-    return True
+    logger.info("Harvest complete: %d total publication assertions", total_pubs)
+    return all_results
 
 
 def run_preview(paths):
     """Generate HTML preview pages."""
+    logger.info("=== Generating Previews ===")
     from src.consumers.preview import generate_all_previews
     generate_all_previews(paths["seed_csv"], paths["raw_base"], paths["preview_output"])
 
 
 def run_disambiguate(paths):
     """Run LLM disambiguation on candidate publications."""
-    from src.harvest_orcid.client import load_seed_faculty, harvest_all as harvest_orcid
+    logger.info("=== Running LLM Disambiguation ===")
+    from src.harvest_orcid.client import load_seed_faculty
     from src.harvest_orcid.parser import parse_works
     from src.disambiguate.scorer import score_batch, save_scores
-    import json
 
     faculty_list = load_seed_faculty(paths["seed_csv"])
     output_dir = Path(paths["disambig_output"])
@@ -111,6 +114,8 @@ def run_disambiguate(paths):
 
         candidates = []
         for source_dir in [paths["raw_pubmed"], paths["raw_openalex"]]:
+            if not source_dir.exists():
+                continue
             for candidate_file in source_dir.glob(f"{faculty_id}*.json"):
                 with open(candidate_file, encoding="utf-8") as infile:
                     data = json.load(infile)
@@ -144,14 +149,19 @@ def parse_args():
         help="Harvest from specific source (can repeat). Default: all.",
     )
     parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Run everything: harvest all sources, disambiguate, generate previews.",
+    )
+    parser.add_argument(
         "--preview",
         action="store_true",
-        help="Generate HTML preview pages.",
+        help="Generate HTML preview pages (standalone or with --full).",
     )
     parser.add_argument(
         "--disambiguate",
         action="store_true",
-        help="Run LLM disambiguation on candidate matches.",
+        help="Run LLM disambiguation on candidate matches (standalone or with --full).",
     )
     return parser.parse_args()
 
@@ -165,17 +175,32 @@ def main():
         logger.error("Seed file not found: %s", paths["seed_csv"])
         sys.exit(1)
 
-    if args.preview:
+    if args.full:
+        sources = args.source or ["orcid", "pubmed", "openalex"]
+        results = run_harvest(sources, paths)
+        if not results:
+            sys.exit(1)
+        run_disambiguate(paths)
+        run_preview(paths)
+        logger.info("=== Full pipeline complete ===")
+        return
+
+    if args.preview and not args.disambiguate:
         run_preview(paths)
         return
 
-    if args.disambiguate:
+    if args.disambiguate and not args.preview:
         run_disambiguate(paths)
         return
 
+    if args.preview and args.disambiguate:
+        run_disambiguate(paths)
+        run_preview(paths)
+        return
+
     sources = args.source or ["orcid", "pubmed", "openalex"]
-    success = run_harvest(sources, paths)
-    if not success:
+    results = run_harvest(sources, paths)
+    if not results:
         sys.exit(1)
 
 
