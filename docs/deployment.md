@@ -22,6 +22,7 @@ pip install -e .
 export NCBI_API_KEY=your_key       # higher PubMed rate limits
 export OPENALEX_EMAIL=your@email   # OpenAlex polite pool
 export OLLAMA_URL=http://localhost:11434  # LLM disambiguation (optional)
+export OLLAMA_MODEL=gemma4         # Ollama model for disambiguation
 export LOG_LEVEL=INFO
 ```
 
@@ -43,13 +44,24 @@ curl -X POST http://localhost:3030/$/datasets \
     -d 'dbName=faculty&dbType=tdb2'
 ```
 
+## Verify the Install
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+The suite runs offline, so this is safe to run on the server before the first
+harvest. It also confirms the generated Turtle parses, which is the failure
+mode that silently produces output no triple store will load.
+
 ## Run the Pipeline
 
 ```bash
 # Full harvest
 python3 main.py
 
-# Load into Fuseki
+# Load into Fuseki (reads data/output/rdf/faculty-all.ttl)
 ./scripts/load_graph_fuseki.sh http://localhost:3030 faculty
 
 # Generate previews
@@ -63,7 +75,7 @@ python3 main.py --preview
 ```bash
 crontab -e
 # Add:
-0 2 * * 0 cd /opt/faculty-graph && .venv/bin/python main.py >> data/output/logs/cron.log 2>&1
+0 2 * * 0 cd /opt/faculty-graph && .venv/bin/python3 main.py >> data/output/logs/cron.log 2>&1
 ```
 
 ### Systemd Timer
@@ -76,7 +88,7 @@ Description=Faculty Graph Harvester
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/faculty-graph
-ExecStart=/opt/faculty-graph/.venv/bin/python main.py
+ExecStart=/opt/faculty-graph/.venv/bin/python3 main.py
 User=faculty-graph
 Environment=LOG_LEVEL=INFO
 ```
@@ -101,9 +113,11 @@ sudo systemctl enable --now faculty-harvest.timer
 ## Verify
 
 ```bash
-# Check SPARQL endpoint
+# Check SPARQL endpoint. load_graph_fuseki.sh writes into a named graph, so the
+# count must target it -- a query against the default graph returns 0.
 curl -s 'http://localhost:3030/faculty/sparql' \
-    --data-urlencode 'query=SELECT (COUNT(*) as ?n) WHERE { ?s ?p ?o }' \
+    --data-urlencode 'query=SELECT (COUNT(*) as ?n) WHERE {
+        GRAPH <http://example.org/faculty-graph/data> { ?s ?p ?o } }' \
     -H 'Accept: application/sparql-results+json'
 
 # Check previews

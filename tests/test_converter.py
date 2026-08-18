@@ -6,6 +6,8 @@ parse is the failure mode this suite exists to prevent: the pipeline shipped
 triple store would load it.
 """
 
+import pathlib
+
 import pytest
 
 from src.rdf_model import converter
@@ -267,3 +269,32 @@ def test_publications_from_repeated_faculty_entries_are_merged(tmp_path):
     graph = parse((tmp_path / "bmi-001.ttl").read_text(encoding="utf-8"))
     article_type = rdflib.URIRef("http://purl.org/ontology/bibo/AcademicArticle")
     assert len(list(graph.subjects(None, article_type))) == 2
+
+
+# ── checked-in reference model ────────────────────────────────────────────────
+
+def test_reference_model_parses():
+    """data/output/rdf/example.ttl is the documented data model.
+
+    It is hand-written, so nothing else would catch it drifting out of valid
+    Turtle -- which is exactly what happened to it once already.
+    """
+    example = pathlib.Path(__file__).resolve().parent.parent / "data/output/rdf/example.ttl"
+    if not example.exists():
+        pytest.skip("reference model not present in this checkout")
+
+    graph = parse(example.read_text(encoding="utf-8"))
+
+    assert len(graph) > 0
+
+
+def test_reference_model_uses_the_same_faculty_iri_as_the_generator():
+    """The reference and the generator must describe the same node."""
+    example = pathlib.Path(__file__).resolve().parent.parent / "data/output/rdf/example.ttl"
+    if not example.exists():
+        pytest.skip("reference model not present in this checkout")
+
+    graph = parse(example.read_text(encoding="utf-8"))
+    generated = converter.build_faculty_uri("bmi-001").strip("<>")
+
+    assert (rdflib.URIRef(generated), None, None) in graph

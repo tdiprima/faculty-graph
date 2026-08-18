@@ -9,7 +9,7 @@ An RDF-based pipeline that harvests public faculty publication data from ORCID, 
 - Converts harvested data into RDF (Turtle format) with per-source provenance.
 - Deduplicates publications by DOI/PMID while preserving separate assertions per source.
 - Supports human review decisions (rejections/verifications) that persist across re-harvests.
-- Runs LLM-based disambiguation on candidate matches via local Ollama (gemma4).
+- Runs LLM-based disambiguation on candidate matches via local Ollama (`gemma4` by default).
 - Generates static HTML preview pages for each faculty member.
 - Loads RDF into a triple store (Fuseki or QLever) for SPARQL querying.
 
@@ -25,11 +25,14 @@ An RDF-based pipeline that harvests public faculty publication data from ORCID, 
 ```text
 faculty-graph/
 ├── README.md
+├── main.py                   # CLI entry point (orchestration only)
+├── pyproject.toml
 ├── docs/
 │   ├── questions.md          # Open questions for boss/team
 │   ├── decisions.md          # Architectural decisions made
 │   ├── sources.md            # API notes and data source docs
-│   └── deployment.md         # Server deployment guide
+│   ├── deployment.md         # Server deployment guide
+│   └── qlever-setup.md       # QLever install and indexing guide
 ├── data/
 │   ├── seed/
 │   │   ├── faculty.csv       # Faculty seed list
@@ -51,13 +54,18 @@ faculty-graph/
 │   ├── tcia-publications.rq
 │   └── faculty-publications-report.rq
 ├── src/
-│   ├── harvest_orcid/        # ORCID harvester
+│   ├── provenance.py         # Search method -> assertion status rules
+│   ├── errors.py             # HarvestError, SeedDataError
+│   ├── harvest_orcid/        # ORCID harvester + seed list loader
 │   ├── harvest_pubmed/       # PubMed E-utilities harvester
 │   ├── harvest_openalex/     # OpenAlex API harvester
 │   ├── rdf_model/            # RDF conversion and model
 │   ├── review/               # Human review layer
-│   ├── disambiguate/         # LLM disambiguation (Ollama/gemma4)
+│   ├── disambiguate/         # LLM disambiguation (Ollama)
+│   │   ├── loader.py         # Reloads raw files offline
+│   │   └── scorer.py         # Ollama prompting and scoring
 │   └── consumers/            # Preview page generator
+├── tests/                    # Offline pytest suite
 └── scripts/
     ├── run_harvesters.sh     # Run all harvesters with logging
     ├── load_graph_fuseki.sh  # Load RDF into Apache Jena Fuseki
@@ -88,6 +96,7 @@ python3 main.py --preview
 python3 main.py --disambiguate
 
 # Output lands in data/output/rdf/, data/raw/, and data/output/previews/
+# The combined graph is data/output/rdf/faculty-all.ttl (what the loaders read)
 ```
 
 ## Environment Variables
@@ -144,4 +153,17 @@ curl -X POST http://localhost:3030/$/datasets -d 'dbName=faculty&dbType=tdb2'
 
 ## Data Model
 
-See `data/output/rdf/example.ttl` for the hand-written reference model showing faculty, publications, provenance, and assertion statuses (candidate, verified, rejected, authoritative).
+See `data/output/rdf/example.ttl` for the hand-written reference model showing
+faculty, publications, provenance, and assertion statuses (candidate, verified,
+rejected, authoritative).
+
+Node IRIs are written in full angle-bracket form
+(`<http://example.org/faculty-graph/data/faculty/bmi-001>`) rather than as
+prefixed names. A Turtle prefixed name cannot contain an unescaped `/`, so
+`fgdata:faculty/bmi-001` is not parseable and no triple store will load it.
+
+Assertion status is derived from how a publication was found: an ORCID-iD
+search yields `authoritative`, a name search yields `candidate`. That rule lives
+in `src/provenance.py` and is shared by the harvesters and the disambiguation
+loader, so a record reloaded from `data/raw/` carries the status the harvester
+gave it.

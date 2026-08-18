@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Test artifacts
+.pytest_cache/
+
 # Raw API responses (large, regenerable)
 data/raw/
 
