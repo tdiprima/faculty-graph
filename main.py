@@ -1,13 +1,13 @@
 """Faculty Graph Pipeline - orchestrates harvesting, review, and RDF generation.
 
 Usage:
-    python main.py                     # Run all harvesters + RDF output
-    python main.py --full              # Harvest + disambiguate + preview
-    python main.py --source orcid      # Run ORCID only
-    python main.py --source pubmed     # Run PubMed only
-    python main.py --source openalex   # Run OpenAlex only
-    python main.py --preview           # Generate HTML previews (standalone)
-    python main.py --disambiguate      # Run LLM disambiguation (standalone)
+    python3 main.py                     # Run all harvesters + RDF output
+    python3 main.py --full              # Harvest + disambiguate + preview
+    python3 main.py --source orcid      # Run ORCID only
+    python3 main.py --source pubmed     # Run PubMed only
+    python3 main.py --source openalex   # Run OpenAlex only
+    python3 main.py --preview           # Generate HTML previews (standalone)
+    python3 main.py --disambiguate      # Run LLM disambiguation (standalone)
 """
 
 import argparse
@@ -15,6 +15,8 @@ import logging
 import os
 import sys
 from pathlib import Path
+
+from src.errors import SeedDataError
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +159,15 @@ def main():
         logger.error("Seed file not found: %s", paths["seed_csv"])
         sys.exit(1)
 
+    try:
+        run_pipeline(args, paths)
+    except SeedDataError as error:
+        logger.error("Invalid seed data: %s", error)
+        sys.exit(1)
+
+
+def run_pipeline(args, paths):
+    """Dispatch to the requested pipeline stages."""
     if args.full:
         sources = args.source or ["orcid", "pubmed", "openalex"]
         results = run_harvest(sources, paths)

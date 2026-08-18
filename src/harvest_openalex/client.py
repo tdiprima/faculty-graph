@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
+from src.errors import HarvestError
 from src.harvest_openalex.parser import parse_works
 from src.provenance import (
     SEARCH_METHOD_ORCID,
@@ -21,6 +22,11 @@ logger = logging.getLogger(__name__)
 OPENALEX_BASE = "https://api.openalex.org"
 SOURCE_NAME = "OpenAlex"
 REQUEST_DELAY_SECONDS = 0.2
+RESULTS_PER_PAGE = 200
+
+# OpenAlex caps a cursor walk well below this; the guard exists only so a
+# malformed next_cursor cannot spin forever.
+MAX_PAGES = 500
 
 
 def _polite_email():
@@ -29,87 +35,74 @@ def _polite_email():
 
 
 def _fetch_json(url):
-    """Fetch URL and parse JSON response."""
+    """Fetch URL and parse JSON response. Raises HarvestError on failure."""
     request = Request(url, headers={"Accept": "application/json"})
     try:
         with urlopen(request, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
-        logger.error("HTTP %d fetching %s: %s", error.code, url, error.reason)
-        return None
+        raise HarvestError(
+            f"HTTP {error.code} from OpenAlex ({error.reason})"
+        ) from error
     except URLError as error:
-        logger.error("Network error fetching %s: %s", url, error.reason)
-        return None
+        raise HarvestError(f"Network error reaching OpenAlex: {error.reason}") from error
+    except TimeoutError as error:
+        raise HarvestError("Timed out waiting for OpenAlex") from error
+    except json.JSONDecodeError as error:
+        raise HarvestError(f"OpenAlex returned malformed JSON: {error}") from error
+
+
+def _fetch_all_pages(params, description):
+    """Walk an OpenAlex cursor-paginated result set to completion.
+
+    Raises HarvestError rather than returning a partial page set, so a network
+    failure mid-walk is never mistaken for a complete harvest.
+    """
+    params = dict(params)
+    params["per-page"] = str(RESULTS_PER_PAGE)
+    email = _polite_email()
+    if email:
+        params["mailto"] = email
+
+    all_results = []
+    cursor = "*"
+    for _page_number in range(MAX_PAGES):
+        params["cursor"] = cursor
+        url = f"{OPENALEX_BASE}/works?{urlencode(params)}"
+        data = _fetch_json(url)
+
+        results = data.get("results", [])
+        all_results.extend(results)
+
+        cursor = data.get("meta", {}).get("next_cursor")
+        if not cursor or not results:
+            logger.info("OpenAlex %s: %d works", description, len(all_results))
+            return all_results
+
+        time.sleep(REQUEST_DELAY_SECONDS)
+
+    raise HarvestError(
+        f"OpenAlex cursor walk for {description} exceeded {MAX_PAGES} pages"
+    )
 
 
 def fetch_works_by_orcid(orcid_id):
     """Fetch all works for an ORCID ID from OpenAlex. Handles pagination."""
-    all_results = []
-    params = {
-        "filter": f"author.orcid:https://orcid.org/{orcid_id}",
-        "per-page": "200",
-    }
-    email = _polite_email()
-    if email:
-        params["mailto"] = email
-
-    cursor = "*"
-    while cursor:
-        params["cursor"] = cursor
-        url = f"{OPENALEX_BASE}/works?{urlencode(params)}"
-        data = _fetch_json(url)
-        if not data:
-            break
-
-        results = data.get("results", [])
-        all_results.extend(results)
-
-        meta = data.get("meta", {})
-        cursor = meta.get("next_cursor")
-        if not results:
-            break
-
-        time.sleep(REQUEST_DELAY_SECONDS)
-
-    logger.info("OpenAlex ORCID fetch for %s: %d works", orcid_id, len(all_results))
-    return {"results": all_results}
+    params = {"filter": f"author.orcid:https://orcid.org/{orcid_id}"}
+    results = _fetch_all_pages(params, f"ORCID fetch for {orcid_id}")
+    return {"results": results}
 
 
 def fetch_works_by_name(full_name, institution="Example University"):
     """Fetch works by author name and institution. Lower confidence fallback."""
-    all_results = []
     search_filter = f"authorships.author.display_name.search:{full_name}"
     if institution:
         search_filter += f",authorships.institutions.display_name.search:{institution}"
 
-    params = {
-        "filter": search_filter,
-        "per-page": "200",
-    }
-    email = _polite_email()
-    if email:
-        params["mailto"] = email
-
-    cursor = "*"
-    while cursor:
-        params["cursor"] = cursor
-        url = f"{OPENALEX_BASE}/works?{urlencode(params)}"
-        data = _fetch_json(url)
-        if not data:
-            break
-
-        results = data.get("results", [])
-        all_results.extend(results)
-
-        meta = data.get("meta", {})
-        cursor = meta.get("next_cursor")
-        if not results:
-            break
-
-        time.sleep(REQUEST_DELAY_SECONDS)
-
-    logger.info("OpenAlex name search for %s: %d works", full_name, len(all_results))
-    return {"results": all_results}
+    results = _fetch_all_pages(
+        {"filter": search_filter}, f"name search for {full_name}"
+    )
+    return {"results": results}
 
 
 def save_raw_response(faculty_id, data, output_dir):
@@ -129,12 +122,16 @@ def harvest_faculty(faculty, raw_dir):
     faculty_id = faculty["faculty_id"]
 
     search_method = search_method_for_faculty(faculty)
-    if search_method == SEARCH_METHOD_ORCID:
-        raw_data = fetch_works_by_orcid(orcid_id)
-    else:
-        raw_data = fetch_works_by_name(full_name)
+    try:
+        if search_method == SEARCH_METHOD_ORCID:
+            raw_data = fetch_works_by_orcid(orcid_id)
+        else:
+            raw_data = fetch_works_by_name(full_name)
+    except HarvestError as error:
+        logger.error("OpenAlex harvest failed for %s: %s", full_name, error)
+        return []
 
-    if not raw_data or not raw_data.get("results"):
+    if not raw_data.get("results"):
         logger.warning("No OpenAlex data for %s", full_name)
         return []
 

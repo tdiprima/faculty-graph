@@ -9,35 +9,42 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def _load_faculty_publications(faculty_id, raw_dirs):
-    """Load parsed publication data from raw JSON files across all sources."""
+def _parse_raw_file(source_name, path):
+    """Parse one raw harvest file with the parser matching its source."""
+    with open(path, encoding="utf-8") as infile:
+        data = json.load(infile)
+
+    if source_name == "orcid":
+        from src.harvest_orcid.parser import parse_works as parse_orcid
+        return parse_orcid(data)
+    if source_name == "openalex":
+        from src.harvest_openalex.parser import parse_works as parse_openalex
+        return parse_openalex(data)
+
+    logger.warning("No preview parser for source %s", source_name)
+    return []
+
+
+def _load_faculty_publications(raw_files):
+    """Load publications from the given {source_name: raw_file_path} mapping.
+
+    Paths are resolved by the caller so this stays a pure read: the preview
+    stage must never write into the raw harvest directory.
+    """
     publications = []
     seen_dois = set()
 
-    for source_name, raw_dir in raw_dirs.items():
-        raw_dir = Path(raw_dir)
-        json_path = raw_dir / f"{faculty_id}.json"
-        if not json_path.exists():
-            for candidate in raw_dir.glob(f"{faculty_id}*.json"):
-                json_path = candidate
-                break
-
-        if not json_path.exists():
+    for source_name, path in raw_files.items():
+        try:
+            parsed = _parse_raw_file(source_name, path)
+        except json.JSONDecodeError as error:
+            logger.error("Malformed raw %s file %s: %s", source_name, path, error)
+            continue
+        except OSError as error:
+            logger.error("Cannot read raw %s file %s: %s", source_name, path, error)
             continue
 
-        with open(json_path, encoding="utf-8") as infile:
-            data = json.load(infile)
-
-        if source_name == "orcid":
-            from src.harvest_orcid.parser import parse_works as parse_orcid
-            pubs = parse_orcid(data)
-        elif source_name == "openalex":
-            from src.harvest_openalex.parser import parse_works as parse_openalex
-            pubs = parse_openalex(data)
-        else:
-            continue
-
-        for pub in pubs:
+        for pub in parsed:
             doi = pub.get("doi")
             if doi and doi in seen_dois:
                 continue
@@ -139,17 +146,31 @@ def generate_faculty_html(faculty, publications):
 </html>"""
 
 
+def _locate_raw_files(faculty, raw_base):
+    """Map each source to this faculty member's raw harvest file, if present.
+
+    ORCID files are named by ORCID iD, every other source by faculty_id.
+    """
+    raw_files = {}
+
+    orcid_id = faculty.get("orcid", "").strip()
+    if orcid_id:
+        orcid_path = raw_base / "orcid" / f"{orcid_id}.json"
+        if orcid_path.exists():
+            raw_files["orcid"] = orcid_path
+
+    openalex_path = raw_base / "openalex" / f"{faculty['faculty_id']}.json"
+    if openalex_path.exists():
+        raw_files["openalex"] = openalex_path
+
+    return raw_files
+
+
 def generate_all_previews(seed_csv, raw_base_dir, output_dir):
     """Generate HTML preview pages for all faculty in seed list."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     raw_base = Path(raw_base_dir)
-
-    raw_dirs = {}
-    for source in ["orcid", "openalex"]:
-        source_dir = raw_base / source
-        if source_dir.exists():
-            raw_dirs[source] = source_dir
 
     with open(seed_csv, newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
@@ -158,21 +179,9 @@ def generate_all_previews(seed_csv, raw_base_dir, output_dir):
     generated = 0
     for faculty in faculty_list:
         faculty_id = faculty["faculty_id"]
+        raw_files = _locate_raw_files(faculty, raw_base)
 
-        orcid_raw = raw_base / "orcid" / f"{faculty.get('orcid', '')}.json"
-        faculty_raw_dirs = {}
-        if orcid_raw.exists():
-            faculty_raw_dirs["orcid"] = raw_base / "orcid"
-            import shutil
-            symlink = raw_base / "orcid" / f"{faculty_id}.json"
-            if not symlink.exists():
-                shutil.copy2(orcid_raw, symlink)
-
-        openalex_raw = raw_base / "openalex" / f"{faculty_id}.json"
-        if openalex_raw.exists():
-            faculty_raw_dirs["openalex"] = raw_base / "openalex"
-
-        publications = _load_faculty_publications(faculty_id, faculty_raw_dirs)
+        publications = _load_faculty_publications(raw_files)
         html = generate_faculty_html(faculty, publications)
 
         output_path = output_dir / f"{faculty_id}.html"

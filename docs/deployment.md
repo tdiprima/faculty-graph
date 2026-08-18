@@ -47,13 +47,13 @@ curl -X POST http://localhost:3030/$/datasets \
 
 ```bash
 # Full harvest
-python main.py
+python3 main.py
 
 # Load into Fuseki
 ./scripts/load_graph_fuseki.sh http://localhost:3030 faculty
 
 # Generate previews
-python main.py --preview
+python3 main.py --preview
 ```
 
 ## Scheduled Harvesting

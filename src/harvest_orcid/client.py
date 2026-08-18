@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
+from src.errors import SeedDataError
 from src.harvest_orcid.parser import parse_works
 from src.provenance import SEARCH_METHOD_ORCID, tag_publications
 
@@ -16,16 +17,60 @@ logger = logging.getLogger(__name__)
 
 ORCID_API_BASE = "https://pub.orcid.org/v3.0"
 SOURCE_NAME = "ORCID"
+
+# Every downstream consumer indexes these directly; a missing column must fail
+# at load time with a readable message rather than as a bare KeyError later.
+REQUIRED_SEED_COLUMNS = ("faculty_id", "full_name", "department", "orcid", "email")
 REQUEST_DELAY_SECONDS = 1.0
 
 
 def load_seed_faculty(csv_path):
-    """Read faculty seed list from CSV, return list of dicts."""
+    """Read and validate the faculty seed list from CSV, return list of dicts.
+
+    Raises SeedDataError when the file is unreadable, the header is missing a
+    required column, or a row omits an identifier the pipeline keys on.
+    """
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as csvfile:
+            reader = csv.DictReader(csvfile)
+            fieldnames = reader.fieldnames or []
+            missing_columns = [
+                column for column in REQUIRED_SEED_COLUMNS if column not in fieldnames
+            ]
+            if missing_columns:
+                raise SeedDataError(
+                    f"{csv_path} is missing required column(s): "
+                    f"{', '.join(missing_columns)}"
+                )
+            rows = list(reader)
+    except OSError as error:
+        raise SeedDataError(f"Cannot read seed file {csv_path}: {error}") from error
+    except UnicodeDecodeError as error:
+        raise SeedDataError(f"Seed file {csv_path} is not valid UTF-8: {error}") from error
+
     faculty = []
-    with open(csv_path, newline="", encoding="utf-8") as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            faculty.append(row)
+    seen_ids = set()
+    for line_number, row in enumerate(rows, start=2):
+        record = {key: (value or "").strip() for key, value in row.items() if key}
+
+        for column in ("faculty_id", "full_name"):
+            if not record.get(column):
+                raise SeedDataError(
+                    f"{csv_path} line {line_number}: empty required field '{column}'"
+                )
+
+        faculty_id = record["faculty_id"]
+        if faculty_id in seen_ids:
+            raise SeedDataError(
+                f"{csv_path} line {line_number}: duplicate faculty_id '{faculty_id}'"
+            )
+        seen_ids.add(faculty_id)
+        faculty.append(record)
+
+    if not faculty:
+        raise SeedDataError(f"Seed file {csv_path} contains no faculty rows")
+
+    logger.info("Loaded %d faculty from %s", len(faculty), csv_path)
     return faculty
 
 

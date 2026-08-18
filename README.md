@@ -74,18 +74,18 @@ pip install -e .
 pip install -e ".[review]"
 
 # Run all harvesters (no API keys needed for public APIs)
-python main.py
+python3 main.py
 
 # Run a single source
-python main.py --source orcid
-python main.py --source pubmed
-python main.py --source openalex
+python3 main.py --source orcid
+python3 main.py --source pubmed
+python3 main.py --source openalex
 
 # Generate HTML preview pages
-python main.py --preview
+python3 main.py --preview
 
 # Run LLM disambiguation (requires Ollama running with gemma4)
-python main.py --disambiguate
+python3 main.py --disambiguate
 
 # Output lands in data/output/rdf/, data/raw/, and data/output/previews/
 ```

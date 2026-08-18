@@ -6,7 +6,7 @@ QLever is a high-performance SPARQL engine developed at the University of Freibu
 
 - Docker (recommended) or a native build
 - At least 4 GB RAM for indexing
-- Generated RDF files from `python main.py`
+- Generated RDF files from `python3 main.py`
 
 ## Option 1: Docker (Recommended)
 
