@@ -1,7 +1,9 @@
 """Parse PubMed XML responses into structured publication records."""
 
 import logging
-import xml.etree.ElementTree as ET
+
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,9 @@ def parse_pubmed_xml(xml_string):
         root = ET.fromstring(xml_string)
     except ET.ParseError as error:
         logger.error("Failed to parse PubMed XML: %s", error)
+        return publications
+    except DefusedXmlException as error:
+        logger.error("Rejected PubMed XML with unsafe entity construct: %s", error)
         return publications
 
     articles = root.findall(".//PubmedArticle")

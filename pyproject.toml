@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "harvests public faculty publication data"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["defusedxml>=0.7.1"]
 
 [project.optional-dependencies]
 review = ["pyyaml>=6.0"]

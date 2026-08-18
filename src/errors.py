@@ -15,3 +15,7 @@ class SeedDataError(Exception):
     The seed CSV is the pipeline's only untrusted input; every harvester keys
     on its columns, so it is validated once at load time.
     """
+
+
+class ReviewDataError(Exception):
+    """A human review entry in reviews.yaml is missing a required key."""

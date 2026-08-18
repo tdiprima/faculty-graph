@@ -4,6 +4,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from src.errors import ReviewDataError
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -19,6 +21,22 @@ def _make_work_key(doi=None, pmid=None):
     if pmid:
         return f"pmid:{pmid}"
     return None
+
+
+def _require_review_key(entry, reviews_path, section):
+    """Return (faculty_id, work_id) for a review entry, or raise with context.
+
+    Raised instead of a bare KeyError so a malformed entry names the offending
+    file and section rather than crashing with an unreadable traceback.
+    """
+    faculty_id = entry.get("faculty_id")
+    work_id = entry.get("work_id")
+    if not faculty_id or not work_id:
+        raise ReviewDataError(
+            f"{reviews_path} [{section}]: entry missing required key "
+            f"'faculty_id' or 'work_id': {entry!r}"
+        )
+    return (faculty_id, work_id)
 
 
 class ReviewManager:
@@ -51,7 +69,7 @@ class ReviewManager:
             return
 
         for rejection in data.get("rejections", []):
-            key = (rejection["faculty_id"], rejection["work_id"])
+            key = _require_review_key(rejection, reviews_path, "rejections")
             self.rejections[key] = {
                 "reason": rejection.get("reason", ""),
                 "reviewed_by": rejection.get("reviewed_by", "human"),
@@ -59,7 +77,7 @@ class ReviewManager:
             }
 
         for verification in data.get("verifications", []):
-            key = (verification["faculty_id"], verification["work_id"])
+            key = _require_review_key(verification, reviews_path, "verifications")
             self.verifications[key] = {
                 "reason": verification.get("reason", ""),
                 "reviewed_by": verification.get("reviewed_by", "human"),
