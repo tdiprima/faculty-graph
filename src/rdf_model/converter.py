@@ -11,6 +11,12 @@ from pathlib import Path
 from urllib.parse import quote
 
 from src.config import base_uri
+from src.identity import (
+    group_publications,
+    merge_group,
+    normalize_doi,
+    normalize_pmid,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,20 +69,26 @@ def escape_turtle_string(value):
 
 
 def build_work_uri(publication):
-    """Generate a URI for a publication based on DOI, PMID, or title."""
-    if publication.get("doi"):
-        return build_data_iri("work", f"doi-{sanitize_uri_part(publication['doi'])}")
-    if publication.get("pmid"):
-        return build_data_iri("work", f"pmid-{sanitize_uri_part(str(publication['pmid']))}")
+    """Generate a URI for a publication based on DOI, PMID, or title.
+
+    Identifiers are normalized first: DOIs are case-insensitive, so the same
+    work must not mint two IRIs because two sources cased its DOI differently.
+    """
+    doi = normalize_doi(publication.get("doi"))
+    if doi:
+        return build_data_iri("work", f"doi-{sanitize_uri_part(doi)}")
+    pmid = normalize_pmid(publication.get("pmid"))
+    if pmid:
+        return build_data_iri("work", f"pmid-{sanitize_uri_part(pmid)}")
     return build_data_iri("work", f"title-{sanitize_uri_part(publication['title'][:80])}")
 
 
 def build_assertion_uri(faculty_id, source, publication):
     """Generate a URI for a publication assertion, unique per source."""
-    if publication.get("doi"):
-        work_key = f"doi-{sanitize_uri_part(publication['doi'])}"
-    elif publication.get("pmid"):
-        work_key = f"pmid-{sanitize_uri_part(str(publication['pmid']))}"
+    if normalize_doi(publication.get("doi")):
+        work_key = f"doi-{sanitize_uri_part(normalize_doi(publication['doi']))}"
+    elif normalize_pmid(publication.get("pmid")):
+        work_key = f"pmid-{sanitize_uri_part(normalize_pmid(publication['pmid']))}"
     else:
         work_key = f"title-{sanitize_uri_part(publication['title'][:60])}"
     source_key = sanitize_uri_part(source.lower())
@@ -154,6 +166,18 @@ def publication_to_turtle(publication):
     if cited_by is not None:
         lines.append(f"    fg:citedByCount     {cited_by} ;")
 
+    for alternate_doi in publication.get("alternate_dois", []):
+        lines.append(
+            f'    fg:externalId       [ fg:idType "doi" ; '
+            f'fg:idValue "{escape_turtle_string(str(alternate_doi))}" ] ;'
+        )
+
+    for alternate_pmid in publication.get("alternate_pmids", []):
+        lines.append(
+            f'    fg:externalId       [ fg:idType "pmid" ; '
+            f'fg:idValue "{escape_turtle_string(str(alternate_pmid))}" ] ;'
+        )
+
     for id_type, id_value in publication.get("external_ids", {}).items():
         if id_type not in ("doi", "pmid", "openalex"):
             lines.append(
@@ -165,12 +189,18 @@ def publication_to_turtle(publication):
     return "\n".join(lines)
 
 
-def assertion_to_turtle(faculty_id, publication, harvest_timestamp):
-    """Generate Turtle triples for a publication assertion."""
+def assertion_to_turtle(faculty_id, publication, harvest_timestamp, work_uri=None):
+    """Generate Turtle triples for a publication assertion.
+
+    work_uri is supplied by the caller when this record was merged into another
+    record's work, so the assertion points at the surviving fg:Work rather than
+    minting a duplicate one from its own identifiers.
+    """
     source = publication.get("source", "unknown")
     status = publication.get("assertion_status", "candidate")
     assertion_uri = build_assertion_uri(faculty_id, source, publication)
-    work_uri = build_work_uri(publication)
+    if work_uri is None:
+        work_uri = build_work_uri(publication)
     source_uri = f"fg:{sanitize_uri_part(source)}"
 
     lines = [
@@ -224,29 +254,37 @@ def coauthor_to_turtle(publication):
 
 
 def convert_faculty_to_rdf(faculty, publications, harvest_timestamp):
-    """Convert one faculty member's publications to Turtle string."""
+    """Convert one faculty member's publications to Turtle string.
+
+    Records describing the same work are merged into a single fg:Work, but every
+    harvested record still emits its own assertion: the merge removes duplicate
+    works from the graph without erasing which source claimed what.
+    """
     faculty_id = faculty["faculty_id"]
-    seen_work_uris = set()
     sections = []
     sections.append(f"# ── Faculty: {faculty['full_name']} ──")
     sections.append(faculty_to_turtle(faculty))
 
-    for pub in publications:
-        work_uri = build_work_uri(pub)
-        if work_uri not in seen_work_uris:
-            sections.append(publication_to_turtle(pub))
-            seen_work_uris.add(work_uri)
+    groups = group_publications(publications)
+    for group in groups:
+        merged_work = merge_group(group)
+        work_uri = build_work_uri(merged_work)
 
-            coauthor_ttl = coauthor_to_turtle(pub)
-            if coauthor_ttl:
-                sections.append(coauthor_ttl)
+        sections.append(publication_to_turtle(merged_work))
 
-        sections.append(assertion_to_turtle(faculty_id, pub, harvest_timestamp))
+        coauthor_ttl = coauthor_to_turtle(merged_work)
+        if coauthor_ttl:
+            sections.append(coauthor_ttl)
+
+        for pub in group:
+            sections.append(
+                assertion_to_turtle(faculty_id, pub, harvest_timestamp, work_uri)
+            )
 
     logger.info(
-        "Generated RDF for %s: %d publications, %d assertions",
+        "Generated RDF for %s: %d works from %d assertions",
         faculty["full_name"],
-        len(seen_work_uris),
+        len(groups),
         len(publications),
     )
     return "\n\n".join(sections)

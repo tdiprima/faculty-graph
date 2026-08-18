@@ -286,23 +286,6 @@ def test_malformed_pubmed_xml_is_skipped_not_fatal(
     assert "Failed to parse PubMed XML" in caplog.text
 
 
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
-        ("10.1158/0008-5472.CAN-17-0316", "10.1158/0008-5472.can-17-0316"),
-        ("https://doi.org/10.1/A", "10.1/a"),
-        ("http://doi.org/10.1/A", "10.1/a"),
-        ("doi:10.1/A", "10.1/a"),
-        ("  10.1/a  ", "10.1/a"),
-        ("10.1/a/", "10.1/a"),
-        ("", ""),
-        (None, ""),
-    ],
-)
-def test_normalize_doi_reduces_sources_to_one_comparable_form(raw, expected):
-    assert preview._normalize_doi(raw) == expected
-
-
 def test_same_doi_in_different_case_is_deduplicated(raw_base, faculty_with_orcid):
     """Regression: ORCID lowercases DOIs, PubMed and OpenAlex do not."""
     fixtures.write_json(

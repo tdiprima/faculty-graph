@@ -298,3 +298,118 @@ def test_reference_model_uses_the_same_faculty_iri_as_the_generator():
     generated = converter.build_faculty_uri("fac-001").strip("<>")
 
     assert (rdflib.URIRef(generated), None, None) in graph
+
+
+CONTAINERIZED = (
+    "A Containerized Software System for Generation, Management, "
+    "and Exploration of Features from Whole Slide Tissue Images"
+)
+
+FG = rdflib.Namespace(converter.FG_NAMESPACE)
+BIBO = rdflib.Namespace("http://purl.org/ontology/bibo/")
+
+
+def works_in(graph):
+    """Return every subject that carries a title, i.e. every fg:Work node."""
+    return set(graph.subjects(rdflib.DCTERMS.title, None))
+
+
+def test_duplicate_records_produce_one_work_node():
+    """Regression: figshare deposits minted a separate fg:Work per DOI."""
+    turtle = render([
+        publication(title=CONTAINERIZED, doi="10.1158/0008-5472.can-17-0316",
+                    type="article", source="ORCID"),
+        publication(title=f"Data from {CONTAINERIZED}",
+                    doi="10.1158/0008-5472.c.6510269.v1", type="other"),
+        publication(title=CONTAINERIZED.replace("Management, and", "Management and"),
+                    doi="10.1158/0008-5472.22418981.v1", type="other"),
+        publication(title=CONTAINERIZED.replace("Management, and", "Management and"),
+                    doi="10.1158/0008-5472.22418981", type="other"),
+        publication(title=f"Data from {CONTAINERIZED}",
+                    doi="10.1158/0008-5472.c.6510269", type="other"),
+    ])
+
+    graph = parse(turtle)
+
+    assert len(works_in(graph)) == 1
+    titles = list(graph.objects(None, rdflib.DCTERMS.title))
+    assert str(titles[0]) == CONTAINERIZED
+
+
+def test_the_surviving_work_carries_the_published_doi():
+    turtle = render([
+        publication(title=f"Data from {CONTAINERIZED}", doi="10.1/deposit", type="other"),
+        publication(title=CONTAINERIZED, doi="10.1/article", type="article"),
+    ])
+
+    graph = parse(turtle)
+
+    dois = {str(o) for o in graph.objects(None, BIBO.doi)}
+    assert dois == {"10.1/article"}
+
+
+def test_deposit_dois_survive_as_external_identifiers():
+    """Merging must not silently delete citable identifiers from the graph."""
+    turtle = render([
+        publication(title=CONTAINERIZED, doi="10.1/article", type="article"),
+        publication(title=f"Data from {CONTAINERIZED}", doi="10.1/deposit", type="other"),
+    ])
+
+    graph = parse(turtle)
+
+    id_values = {str(o) for o in graph.objects(None, FG.idValue)}
+    assert "10.1/deposit" in id_values
+
+
+def test_every_source_keeps_its_own_assertion_after_merging():
+    """The merge removes duplicate works, never provenance."""
+    turtle = render([
+        publication(title=CONTAINERIZED, doi="10.1/a", pmid="123", source="ORCID"),
+        publication(title=CONTAINERIZED, pmid="123", source="PubMed"),
+        publication(title=CONTAINERIZED, doi="10.1/A", source="OpenAlex"),
+    ])
+
+    graph = parse(turtle)
+    assertions = set(graph.subjects(rdflib.RDF.type, FG.PublicationAssertion))
+
+    assert len(works_in(graph)) == 1
+    assert len(assertions) == 3
+
+
+def test_merged_assertions_all_point_at_the_surviving_work():
+    turtle = render([
+        publication(title=CONTAINERIZED, doi="10.1/a", type="article", source="ORCID"),
+        publication(title=f"Data from {CONTAINERIZED}", doi="10.1/b",
+                    type="other", source="OpenAlex"),
+    ])
+
+    graph = parse(turtle)
+    referenced_works = set(graph.objects(None, FG.work))
+
+    assert referenced_works == works_in(graph)
+
+
+def test_doi_case_alone_does_not_split_a_work():
+    """DOIs are case-insensitive; ORCID lowercases them and PubMed does not."""
+    turtle = render([
+        publication(title="A study of things", doi="10.1158/0008-5472.CAN-17-0316",
+                    source="PubMed"),
+        publication(title="A study of things", doi="10.1158/0008-5472.can-17-0316",
+                    source="ORCID"),
+    ])
+
+    graph = parse(turtle)
+
+    assert len(works_in(graph)) == 1
+
+
+def test_unrelated_works_are_still_separate_nodes():
+    turtle = render([
+        publication(title=CONTAINERIZED, doi="10.1/a"),
+        publication(title="Hierarchical nucleus segmentation in digital pathology images",
+                    doi="10.1/b"),
+    ])
+
+    graph = parse(turtle)
+
+    assert len(works_in(graph)) == 2

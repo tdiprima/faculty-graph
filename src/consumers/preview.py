@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from src.identity import merge_publications
 from src.provenance import SEARCH_METHOD_NAME, SEARCH_METHOD_ORCID
 
 logger = logging.getLogger(__name__)
@@ -44,70 +45,16 @@ def _parse_raw_file(source_name, path):
     return []
 
 
-DOI_URL_PREFIXES = ("https://doi.org/", "http://doi.org/", "doi:")
-
-
-def _normalize_doi(doi):
-    """Reduce a DOI to its comparable form.
-
-    DOIs are case-insensitive, and the sources disagree on case and on whether
-    the resolver prefix is included, so the raw strings cannot be compared
-    directly. Only the comparison key is normalized; the displayed DOI keeps
-    whatever the source published.
-    """
-    if not doi:
-        return ""
-    normalized = str(doi).strip().lower()
-    for prefix in DOI_URL_PREFIXES:
-        if normalized.startswith(prefix):
-            normalized = normalized[len(prefix):]
-            break
-    return normalized.strip("/")
-
-
-def _identity_keys(publication):
-    """Return the identifiers that mark this publication as already seen.
-
-    PubMed records often carry a PMID but no DOI, and the same record can arrive
-    from both PubMed search methods, so PMID must dedupe alongside DOI.
-    """
-    keys = []
-    doi = _normalize_doi(publication.get("doi"))
-    if doi:
-        keys.append(("doi", doi))
-    pmid = str(publication.get("pmid") or "").strip()
-    if pmid:
-        keys.append(("pmid", pmid))
-    return keys
-
-
-def _find_existing(identity_keys, publication_by_identifier):
-    """Return the already-kept publication these identifiers refer to, if any."""
-    for key in identity_keys:
-        existing = publication_by_identifier.get(key)
-        if existing is not None:
-            return existing
-    return None
-
-
-def _record_source(publication, source_name):
-    """Append a source to a publication's provenance list, without duplicates."""
-    sources = publication.setdefault("_sources", [])
-    if source_name not in sources:
-        sources.append(source_name)
-
-
 def _load_faculty_publications(raw_files):
     """Load publications from the given {source_key: raw_file_path} mapping.
 
-    A work found in several sources is kept once, carrying every source that
-    reported it, so the page shows corroboration rather than the first hit only.
+    Records describing the same work are merged by src.identity, so the page
+    shows one row per work carrying every source that reported it.
 
     Paths are resolved by the caller so this stays a pure read: the preview
     stage must never write into the raw harvest directory.
     """
-    publications = []
-    publication_by_identifier = {}
+    harvested = []
 
     for source_key, path in raw_files.items():
         source_name = _base_source(source_key)
@@ -121,19 +68,10 @@ def _load_faculty_publications(raw_files):
             continue
 
         for pub in parsed:
-            identity_keys = _identity_keys(pub)
-            existing = _find_existing(identity_keys, publication_by_identifier)
-            target = existing if existing is not None else pub
+            pub["source"] = source_name
+            harvested.append(pub)
 
-            _record_source(target, source_name)
-            # A record matched on one identifier contributes its others, so a
-            # later DOI-only or PMID-only record still merges into the same work.
-            for key in identity_keys:
-                publication_by_identifier.setdefault(key, target)
-
-            if existing is None:
-                publications.append(pub)
-
+    publications = merge_publications(harvested)
     publications.sort(key=lambda p: p.get("date") or "0000", reverse=True)
     return publications
 
