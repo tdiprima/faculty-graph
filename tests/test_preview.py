@@ -245,7 +245,7 @@ def test_pubmed_publications_reach_the_page_labelled_pubmed(
     )
 
     assert [p["title"] for p in publications] == ["A PubMed work"]
-    assert publications[0]["_source"] == "pubmed"
+    assert publications[0]["_sources"] == ["pubmed"]
     html = preview.generate_faculty_html(faculty_with_orcid, publications)
     assert "<td>pubmed</td>" in html
 
@@ -338,3 +338,81 @@ def test_distinct_dois_are_not_collapsed(raw_base, faculty_with_orcid):
     )
 
     assert len(publications) == 2
+
+
+def test_work_found_in_several_sources_lists_all_of_them(
+    raw_base, faculty_with_orcid
+):
+    fixtures.write_json(
+        raw_base / "orcid" / f"{faculty_with_orcid['orcid']}.json",
+        fixtures.orcid_works([{"title": "Shared", "doi": "10.1/shared", "pmid": "555"}]),
+    )
+    fixtures.write_json(
+        raw_base / "openalex" / "fac-001.json",
+        fixtures.openalex_works([{"title": "Shared", "doi": "10.1/shared"}]),
+    )
+    fixtures.write_text(
+        raw_base / "pubmed" / "fac-001-orcid.xml",
+        fixtures.pubmed_xml([{"title": "Shared", "pmid": "555"}]),
+    )
+
+    publications = preview._load_faculty_publications(
+        preview._locate_raw_files(faculty_with_orcid, raw_base)
+    )
+
+    assert len(publications) == 1
+    assert publications[0]["_sources"] == ["orcid", "openalex", "pubmed"]
+    html = preview.generate_faculty_html(faculty_with_orcid, publications)
+    assert "<td>orcid, openalex, pubmed</td>" in html
+
+
+def test_pmid_only_record_merges_into_the_work_matched_by_doi(
+    raw_base, faculty_with_orcid
+):
+    """PubMed records often lack a DOI; the PMID must still link them."""
+    fixtures.write_json(
+        raw_base / "orcid" / f"{faculty_with_orcid['orcid']}.json",
+        fixtures.orcid_works([{"title": "Shared", "doi": "10.1/shared", "pmid": "777"}]),
+    )
+    fixtures.write_text(
+        raw_base / "pubmed" / "fac-001-name.xml",
+        fixtures.pubmed_xml([{"title": "Shared", "pmid": "777"}]),
+    )
+
+    publications = preview._load_faculty_publications(
+        preview._locate_raw_files(faculty_with_orcid, raw_base)
+    )
+
+    assert [p["_sources"] for p in publications] == [["orcid", "pubmed"]]
+
+
+def test_a_source_reporting_a_work_twice_lists_it_once(raw_base, faculty_with_orcid):
+    fixtures.write_json(
+        raw_base / "orcid" / f"{faculty_with_orcid['orcid']}.json",
+        fixtures.orcid_works([
+            {"title": "Dup", "doi": "10.1/dup"},
+            {"title": "Dup", "doi": "10.1/DUP"},
+        ]),
+    )
+
+    publications = preview._load_faculty_publications(
+        preview._locate_raw_files(faculty_with_orcid, raw_base)
+    )
+
+    assert [p["_sources"] for p in publications] == [["orcid"]]
+
+
+def test_unidentified_publications_are_labelled_by_their_own_source(
+    raw_base, faculty_with_orcid
+):
+    """Works with neither DOI nor PMID cannot merge, but must still be labelled."""
+    fixtures.write_json(
+        raw_base / "orcid" / f"{faculty_with_orcid['orcid']}.json",
+        fixtures.orcid_works([{"title": "One"}, {"title": "Two"}]),
+    )
+
+    publications = preview._load_faculty_publications(
+        preview._locate_raw_files(faculty_with_orcid, raw_base)
+    )
+
+    assert [p["_sources"] for p in publications] == [["orcid"], ["orcid"]]

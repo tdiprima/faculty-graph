@@ -81,14 +81,33 @@ def _identity_keys(publication):
     return keys
 
 
+def _find_existing(identity_keys, publication_by_identifier):
+    """Return the already-kept publication these identifiers refer to, if any."""
+    for key in identity_keys:
+        existing = publication_by_identifier.get(key)
+        if existing is not None:
+            return existing
+    return None
+
+
+def _record_source(publication, source_name):
+    """Append a source to a publication's provenance list, without duplicates."""
+    sources = publication.setdefault("_sources", [])
+    if source_name not in sources:
+        sources.append(source_name)
+
+
 def _load_faculty_publications(raw_files):
     """Load publications from the given {source_key: raw_file_path} mapping.
+
+    A work found in several sources is kept once, carrying every source that
+    reported it, so the page shows corroboration rather than the first hit only.
 
     Paths are resolved by the caller so this stays a pure read: the preview
     stage must never write into the raw harvest directory.
     """
     publications = []
-    seen_identifiers = set()
+    publication_by_identifier = {}
 
     for source_key, path in raw_files.items():
         source_name = _base_source(source_key)
@@ -103,11 +122,17 @@ def _load_faculty_publications(raw_files):
 
         for pub in parsed:
             identity_keys = _identity_keys(pub)
-            if any(key in seen_identifiers for key in identity_keys):
-                continue
-            seen_identifiers.update(identity_keys)
-            pub["_source"] = source_name
-            publications.append(pub)
+            existing = _find_existing(identity_keys, publication_by_identifier)
+            target = existing if existing is not None else pub
+
+            _record_source(target, source_name)
+            # A record matched on one identifier contributes its others, so a
+            # later DOI-only or PMID-only record still merges into the same work.
+            for key in identity_keys:
+                publication_by_identifier.setdefault(key, target)
+
+            if existing is None:
+                publications.append(pub)
 
     publications.sort(key=lambda p: p.get("date") or "0000", reverse=True)
     return publications
@@ -124,6 +149,18 @@ def _escape_html(text):
     )
 
 
+def _format_sources(publication):
+    """Render a publication's provenance for the Source column.
+
+    Falls back to the single-source fields so callers that pass records straight
+    from a harvest parser still label them.
+    """
+    sources = publication.get("_sources")
+    if sources:
+        return ", ".join(sources)
+    return publication.get("_source", publication.get("source", ""))
+
+
 def generate_faculty_html(faculty, publications):
     """Generate HTML preview for a single faculty member."""
     name = _escape_html(faculty["full_name"])
@@ -135,7 +172,7 @@ def generate_faculty_html(faculty, publications):
     for pub in publications:
         title = _escape_html(pub.get("title", "Untitled"))
         date = _escape_html(pub.get("date", ""))
-        source = _escape_html(pub.get("_source", pub.get("source", "")))
+        source = _escape_html(_format_sources(pub))
         doi = pub.get("doi", "")
         doi_link = ""
         if doi:
