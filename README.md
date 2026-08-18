@@ -167,3 +167,13 @@ search yields `authoritative`, a name search yields `candidate`. That rule lives
 in `src/provenance.py` and is shared by the harvesters and the disambiguation
 loader, so a record reloaded from `data/raw/` carries the status the harvester
 gave it.
+
+---
+
+## 🤖 AI-Native Development
+
+**Architected by GPT-5.5. Built by Opus-5. Directed by a human.**
+
+Architecture, implementation, and documentation were generated with AI, with human direction, testing, review, and final approval.
+
+<br>
