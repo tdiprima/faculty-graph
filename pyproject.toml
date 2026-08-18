@@ -9,3 +9,11 @@ dependencies = []
 [project.optional-dependencies]
 review = ["pyyaml>=6.0"]
 all = ["pyyaml>=6.0"]
+# rdflib parses generated Turtle in the converter tests; without it those
+# tests skip rather than fail.
+dev = ["pytest>=8.0", "pyyaml>=6.0", "rdflib>=7.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

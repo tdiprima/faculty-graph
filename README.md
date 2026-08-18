@@ -97,7 +97,23 @@ python3 main.py --disambiguate
 | `NCBI_API_KEY` | No | Higher PubMed rate limits (3 req/s without, 10 with) |
 | `OPENALEX_EMAIL` | No | OpenAlex polite pool access |
 | `OLLAMA_URL` | No | Ollama endpoint (default: `http://localhost:11434`) |
+| `OLLAMA_MODEL` | No | Ollama model for disambiguation (default: `gemma4`) |
 | `LOG_LEVEL` | No | Logging level (default: `INFO`) |
+
+## Tests
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+The suite is offline and deterministic: every source response is built from
+synthetic fixtures in `tests/fixtures.py`, so no test touches the network or
+reads `data/raw/`.
+
+`tests/test_converter.py` parses all generated Turtle with `rdflib`. Those tests
+skip if `rdflib` is missing rather than failing, but a triple store will reject
+output they would have caught, so install the `dev` extra before trusting a run.
 
 ## Human Review
 
