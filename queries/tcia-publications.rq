@@ -1,0 +1,35 @@
+PREFIX fg:     <http://example.org/faculty-graph/>
+PREFIX fgdata: <http://example.org/faculty-graph/data/>
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX bibo:   <http://purl.org/ontology/bibo/>
+PREFIX rdfs:   <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?name ?title ?doi ?date ?source ?status
+WHERE {
+    ?assertion a fg:PublicationAssertion ;
+               fg:faculty ?faculty ;
+               fg:work ?work ;
+               fg:status ?statusNode ;
+               fg:source ?sourceNode .
+
+    ?faculty foaf:name ?name .
+    ?work dcterms:title ?title .
+
+    ?statusNode rdfs:label ?status .
+    ?sourceNode rdfs:label ?source .
+
+    OPTIONAL { ?work bibo:doi ?doi }
+    OPTIONAL { ?work dcterms:date ?date }
+
+    FILTER (?statusNode != fg:rejected)
+    FILTER (
+        CONTAINS(LCASE(?title), "cancer imaging") ||
+        CONTAINS(LCASE(?title), "tcia") ||
+        CONTAINS(LCASE(?title), "pathology") ||
+        CONTAINS(LCASE(?title), "imaging") ||
+        CONTAINS(LCASE(?title), "radiology") ||
+        CONTAINS(LCASE(?title), "digital pathology")
+    )
+}
+ORDER BY ?name DESC(?date)

@@ -1,0 +1,25 @@
+PREFIX fg:     <http://example.org/faculty-graph/>
+PREFIX fgdata: <http://example.org/faculty-graph/data/>
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX bibo:   <http://purl.org/ontology/bibo/>
+
+SELECT ?faculty_name ?coauthor_name ?coauthor_orcid (COUNT(?work) AS ?shared_works)
+WHERE {
+    ?assertion a fg:PublicationAssertion ;
+               fg:faculty ?faculty ;
+               fg:work ?work ;
+               fg:status ?status .
+
+    ?faculty foaf:name ?faculty_name .
+    ?work dcterms:creator ?coauthor .
+    ?coauthor foaf:name ?coauthor_name .
+
+    OPTIONAL { ?coauthor fg:orcidId ?coauthor_orcid }
+
+    FILTER (?status != fg:rejected)
+    FILTER (?coauthor != ?faculty)
+}
+GROUP BY ?faculty_name ?coauthor_name ?coauthor_orcid
+ORDER BY DESC(?shared_works)
+LIMIT 50

@@ -4,11 +4,12 @@ import csv
 import json
 import logging
 import os
-import sys
 import time
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+
+from src.harvest_orcid.parser import parse_works
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +23,7 @@ def load_seed_faculty(csv_path):
     with open(csv_path, newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            if row.get("orcid", "").strip():
-                faculty.append(row)
-            else:
-                logger.warning("Skipping %s: no ORCID ID", row.get("full_name", "unknown"))
+            faculty.append(row)
     return faculty
 
 
@@ -56,55 +54,38 @@ def save_raw_response(orcid_id, data, output_dir):
     return output_path
 
 
-def harvest_all(seed_csv, raw_output_dir):
-    """Fetch ORCID works for all faculty in seed list. Returns list of (faculty_dict, works_json) tuples."""
-    faculty_list = load_seed_faculty(seed_csv)
-    if not faculty_list:
-        logger.error("No faculty with ORCID IDs found in %s", seed_csv)
-        return []
+def harvest_all(faculty_list, raw_output_dir):
+    """Fetch ORCID works for all faculty.
 
+    Returns list of (faculty_dict, parsed_publications) tuples.
+    Each publication has source='ORCID' and assertion_status='authoritative'.
+    """
     results = []
     for faculty in faculty_list:
-        orcid_id = faculty["orcid"].strip()
-        logger.info("Fetching ORCID works for %s (%s)", faculty["full_name"], orcid_id)
+        orcid_id = faculty.get("orcid", "").strip()
+        if not orcid_id:
+            logger.warning("Skipping %s: no ORCID ID", faculty.get("full_name", "unknown"))
+            results.append((faculty, []))
+            continue
 
+        logger.info("Fetching ORCID works for %s (%s)", faculty["full_name"], orcid_id)
         works_data = fetch_orcid_works(orcid_id)
+
         if works_data is None:
             logger.warning("No data returned for %s", faculty["full_name"])
+            results.append((faculty, []))
             continue
 
         save_raw_response(orcid_id, works_data, raw_output_dir)
-        results.append((faculty, works_data))
+        publications = parse_works(works_data)
+
+        for pub in publications:
+            pub["source"] = "ORCID"
+            pub["assertion_status"] = "authoritative"
+
+        results.append((faculty, publications))
         time.sleep(REQUEST_DELAY_SECONDS)
 
-    logger.info("Harvested %d of %d faculty", len(results), len(faculty_list))
+    harvested = sum(1 for _, pubs in results if pubs)
+    logger.info("ORCID: harvested %d of %d faculty", harvested, len(faculty_list))
     return results
-
-
-def main():
-    logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
-
-    project_root = Path(__file__).resolve().parent.parent.parent
-    seed_csv = project_root / "data" / "seed" / "faculty.csv"
-    raw_dir = project_root / "data" / "raw" / "orcid"
-    rdf_output_dir = project_root / "data" / "output" / "rdf"
-
-    if not seed_csv.exists():
-        logger.error("Seed file not found: %s", seed_csv)
-        sys.exit(1)
-
-    results = harvest_all(seed_csv, raw_dir)
-    if not results:
-        logger.error("No ORCID data harvested")
-        sys.exit(1)
-
-    from src.rdf_model.converter import convert_all_to_rdf
-    convert_all_to_rdf(results, rdf_output_dir)
-    logger.info("Pipeline complete")
-
-
-if __name__ == "__main__":
-    main()

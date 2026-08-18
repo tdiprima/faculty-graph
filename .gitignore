@@ -12,9 +12,12 @@ wheels/
 # Raw API responses (large, regenerable)
 data/raw/
 
-# Generated RDF (regenerable, except example.ttl)
-data/output/rdf/faculty-orcid.ttl
+# Generated output (regenerable, except example.ttl)
+data/output/rdf/faculty-*.ttl
 data/output/rdf/bmi-*.ttl
+data/output/previews/
+data/output/disambiguation/
+data/output/logs/
 
 # Other
 faculty-data-pipeline-solo-plan.md

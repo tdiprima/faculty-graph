@@ -1,0 +1,22 @@
+# Human review decisions for publication-faculty matches.
+#
+# Rejections and verifications persist across harvester re-runs.
+# The pipeline will never overwrite a decision recorded here.
+#
+# work_id format: "doi:10.xxxx/example" or "pmid:12345678"
+
+rejections: []
+  # Example:
+  # - faculty_id: bmi-001
+  #   work_id: "doi:10.1234/wrong-person"
+  #   reason: "Different J. Saltz at another institution"
+  #   reviewed_by: human
+  #   reviewed_at: 2026-08-18
+
+verifications: []
+  # Example:
+  # - faculty_id: bmi-001
+  #   work_id: "pmid:12345678"
+  #   reason: "Confirmed via faculty ORCID profile"
+  #   reviewed_by: human
+  #   reviewed_at: 2026-08-18
