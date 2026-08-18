@@ -24,6 +24,9 @@ DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4")
 VALID_RECOMMENDATIONS = ("likely_match", "uncertain", "likely_not_match")
 HUMAN_REVIEW_CONFIDENCE = 0.7
 REQUEST_TIMEOUT_SECONDS = 120
+# Thinking-capable models spend their whole budget reasoning and return an empty
+# response, so thinking is disabled and the budget leaves room for a full verdict.
+MAX_RESPONSE_TOKENS = 500
 
 
 def _build_prompt(faculty, candidate, known_publications=None):
@@ -69,9 +72,11 @@ def _call_api(prompt, model=None):
         "model": model,
         "prompt": prompt,
         "stream": False,
+        "think": False,
+        "format": "json",
         "options": {
             "temperature": 0.1,
-            "num_predict": 300,
+            "num_predict": MAX_RESPONSE_TOKENS,
         },
     }).encode("utf-8")
 
@@ -98,6 +103,15 @@ def _call_api(prompt, model=None):
         logger.error("Ollama returned malformed JSON envelope: %s", error)
         return None
 
+    if data.get("done_reason") == "length":
+        logger.error(
+            "Ollama (model %s) hit the %d-token limit before finishing its verdict; "
+            "raise MAX_RESPONSE_TOKENS or pick a model that answers without reasoning first",
+            model,
+            MAX_RESPONSE_TOKENS,
+        )
+        return None
+
     return _parse_recommendation(data.get("response", ""))
 
 
@@ -116,6 +130,10 @@ def _parse_recommendation(raw_text):
     Local models emit malformed or unexpectedly shaped output often enough that
     the caller must not assume a dict came back.
     """
+    if not raw_text.strip():
+        logger.error("LLM returned an empty response")
+        return None
+
     try:
         parsed = json.loads(_strip_code_fence(raw_text))
     except json.JSONDecodeError as error:
