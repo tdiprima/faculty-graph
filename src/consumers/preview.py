@@ -44,6 +44,27 @@ def _parse_raw_file(source_name, path):
     return []
 
 
+DOI_URL_PREFIXES = ("https://doi.org/", "http://doi.org/", "doi:")
+
+
+def _normalize_doi(doi):
+    """Reduce a DOI to its comparable form.
+
+    DOIs are case-insensitive, and the sources disagree on case and on whether
+    the resolver prefix is included, so the raw strings cannot be compared
+    directly. Only the comparison key is normalized; the displayed DOI keeps
+    whatever the source published.
+    """
+    if not doi:
+        return ""
+    normalized = str(doi).strip().lower()
+    for prefix in DOI_URL_PREFIXES:
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix):]
+            break
+    return normalized.strip("/")
+
+
 def _identity_keys(publication):
     """Return the identifiers that mark this publication as already seen.
 
@@ -51,10 +72,10 @@ def _identity_keys(publication):
     from both PubMed search methods, so PMID must dedupe alongside DOI.
     """
     keys = []
-    doi = publication.get("doi")
+    doi = _normalize_doi(publication.get("doi"))
     if doi:
         keys.append(("doi", doi))
-    pmid = publication.get("pmid")
+    pmid = str(publication.get("pmid") or "").strip()
     if pmid:
         keys.append(("pmid", pmid))
     return keys

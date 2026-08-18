@@ -284,3 +284,57 @@ def test_malformed_pubmed_xml_is_skipped_not_fatal(
 
     assert [p["title"] for p in publications] == ["Still here"]
     assert "Failed to parse PubMed XML" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("10.1158/0008-5472.CAN-17-0316", "10.1158/0008-5472.can-17-0316"),
+        ("https://doi.org/10.1/A", "10.1/a"),
+        ("http://doi.org/10.1/A", "10.1/a"),
+        ("doi:10.1/A", "10.1/a"),
+        ("  10.1/a  ", "10.1/a"),
+        ("10.1/a/", "10.1/a"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_normalize_doi_reduces_sources_to_one_comparable_form(raw, expected):
+    assert preview._normalize_doi(raw) == expected
+
+
+def test_same_doi_in_different_case_is_deduplicated(raw_base, faculty_with_orcid):
+    """Regression: ORCID lowercases DOIs, PubMed and OpenAlex do not."""
+    fixtures.write_json(
+        raw_base / "orcid" / f"{faculty_with_orcid['orcid']}.json",
+        fixtures.orcid_works([{"title": "Work", "doi": "10.1158/0008-5472.can-17-0316"}]),
+    )
+    fixtures.write_json(
+        raw_base / "openalex" / "fac-001.json",
+        fixtures.openalex_works([
+            {"title": "Work", "doi": "10.1158/0008-5472.CAN-17-0316"},
+        ]),
+    )
+
+    publications = preview._load_faculty_publications(
+        preview._locate_raw_files(faculty_with_orcid, raw_base)
+    )
+
+    assert len(publications) == 1
+
+
+def test_distinct_dois_are_not_collapsed(raw_base, faculty_with_orcid):
+    """Normalization must not merge works that only look similar."""
+    fixtures.write_json(
+        raw_base / "orcid" / f"{faculty_with_orcid['orcid']}.json",
+        fixtures.orcid_works([
+            {"title": "One", "doi": "10.1/abc"},
+            {"title": "Two", "doi": "10.1/abcd"},
+        ]),
+    )
+
+    publications = preview._load_faculty_publications(
+        preview._locate_raw_files(faculty_with_orcid, raw_base)
+    )
+
+    assert len(publications) == 2
