@@ -399,3 +399,63 @@ def test_unidentified_publications_are_labelled_by_their_own_source(
     )
 
     assert [p["_sources"] for p in publications] == [["ORCID"], ["ORCID"]]
+
+
+def test_a_work_without_a_doi_is_identified_by_its_pmid(faculty_with_orcid):
+    """Regression: PubMed-only proceedings showed a blank identifier cell."""
+    html = preview.generate_faculty_html(
+        faculty_with_orcid,
+        [{"title": "Towards Generation of Combined Datasets", "pmid": "28815113"}],
+    )
+
+    assert "https://pubmed.ncbi.nlm.nih.gov/28815113/" in html
+    assert "PMID 28815113" in html
+
+
+def test_a_doi_wins_over_a_pmid_in_the_identifier_cell(faculty_with_orcid):
+    html = preview.generate_faculty_html(
+        faculty_with_orcid, [{"title": "T", "doi": "10.1/a", "pmid": "28815113"}]
+    )
+
+    assert "https://doi.org/10.1/a" in html
+    assert "pubmed.ncbi.nlm.nih.gov" not in html
+
+
+def test_a_work_with_neither_identifier_renders_an_empty_cell(faculty_with_orcid):
+    html = preview.generate_faculty_html(faculty_with_orcid, [{"title": "T"}])
+
+    assert "doi.org" not in html
+    assert "PMID" not in html
+
+
+@pytest.mark.parametrize(
+    "hostile_pmid",
+    [
+        '1"><script>alert(1)</script>',
+        "../../etc/passwd",
+        "1 OR 1=1",
+        "javascript:alert(1)",
+        "<img src=x onerror=alert(1)>",
+    ],
+)
+def test_a_malformed_pmid_is_never_linked(faculty_with_orcid, hostile_pmid):
+    """Only digits reach the PubMed URL; anything else renders as inert text."""
+    benign = preview.generate_faculty_html(faculty_with_orcid, [{"title": "T"}])
+    attacked = preview.generate_faculty_html(
+        faculty_with_orcid, [{"title": "T", "pmid": hostile_pmid}]
+    )
+
+    assert "pubmed.ncbi.nlm.nih.gov" not in attacked
+    assert _count_tags(attacked) == _count_tags(benign)
+
+
+def test_a_hostile_doi_cannot_escape_the_link_href(faculty_with_orcid):
+    benign = preview.generate_faculty_html(
+        faculty_with_orcid, [{"title": "T", "doi": "10.1/a"}]
+    )
+    attacked = preview.generate_faculty_html(
+        faculty_with_orcid, [{"title": "T", "doi": '10.1/a"><script>alert(1)</script>'}]
+    )
+
+    assert _count_tags(attacked) == _count_tags(benign)
+    assert "<script>" not in attacked

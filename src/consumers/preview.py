@@ -3,8 +3,10 @@
 import csv
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from src.identity import merge_publications
 from src.provenance import SEARCH_METHOD_NAME, SEARCH_METHOD_ORCID
@@ -114,6 +116,36 @@ def _format_sources(publication):
     return publication.get("_source", publication.get("source", ""))
 
 
+PMID_PATTERN = re.compile(r"^\d+$")
+
+
+def _identifier_cell(publication):
+    """Render the publication's best citable identifier as a link.
+
+    Not every work has a DOI — conference proceedings indexed only by PubMed
+    routinely do not — so the PMID stands in rather than leaving the row with no
+    way to look the work up.
+    """
+    doi = str(publication.get("doi") or "").strip()
+    if doi:
+        return (
+            f'<a href="https://doi.org/{quote(doi, safe="/:")}">'
+            f"{_escape_html(doi)}</a>"
+        )
+
+    pmid = str(publication.get("pmid") or "").strip()
+    if not pmid:
+        return ""
+    if not PMID_PATTERN.match(pmid):
+        # A non-numeric PMID is malformed upstream; show it, never link it.
+        logger.warning("Ignoring malformed PMID %r for linking", pmid)
+        return f"PMID {_escape_html(pmid)}"
+    return (
+        f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}/">'
+        f"PMID {_escape_html(pmid)}</a>"
+    )
+
+
 def generate_faculty_html(faculty, publications):
     """Generate HTML preview for a single faculty member."""
     name = _escape_html(faculty["full_name"])
@@ -126,10 +158,7 @@ def generate_faculty_html(faculty, publications):
         title = _escape_html(pub.get("title", "Untitled"))
         date = _escape_html(pub.get("date", ""))
         source = _escape_html(_format_sources(pub))
-        doi = pub.get("doi", "")
-        doi_link = ""
-        if doi:
-            doi_link = f'<a href="https://doi.org/{_escape_html(doi)}">{_escape_html(doi)}</a>'
+        identifier = _identifier_cell(pub)
 
         journal = _escape_html(pub.get("journal", ""))
         pub_type = _escape_html(pub.get("type", ""))
@@ -138,7 +167,7 @@ def generate_faculty_html(faculty, publications):
             <td>{title}</td>
             <td>{journal}</td>
             <td>{date}</td>
-            <td>{doi_link}</td>
+            <td>{identifier}</td>
             <td>{source}</td>
         </tr>""")
 
@@ -176,7 +205,7 @@ def generate_faculty_html(faculty, publications):
                 <th>Title</th>
                 <th>Journal</th>
                 <th>Date</th>
-                <th>DOI</th>
+                <th>Identifier</th>
                 <th>Source</th>
             </tr>
         </thead>
