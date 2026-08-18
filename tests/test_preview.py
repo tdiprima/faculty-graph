@@ -245,9 +245,9 @@ def test_pubmed_publications_reach_the_page_labelled_pubmed(
     )
 
     assert [p["title"] for p in publications] == ["A PubMed work"]
-    assert publications[0]["_sources"] == ["pubmed"]
+    assert publications[0]["_sources"] == ["PubMed"]
     html = preview.generate_faculty_html(faculty_with_orcid, publications)
-    assert "<td>pubmed</td>" in html
+    assert "<td>PubMed</td>" in html
 
 
 def test_same_record_from_both_pubmed_files_appears_once(
@@ -344,9 +344,9 @@ def test_work_found_in_several_sources_lists_all_of_them(
     )
 
     assert len(publications) == 1
-    assert publications[0]["_sources"] == ["orcid", "openalex", "pubmed"]
+    assert publications[0]["_sources"] == ["ORCID", "PubMed", "OpenAlex"]
     html = preview.generate_faculty_html(faculty_with_orcid, publications)
-    assert "<td>orcid, openalex, pubmed</td>" in html
+    assert "<td>ORCID, PubMed, OpenAlex</td>" in html
 
 
 def test_pmid_only_record_merges_into_the_work_matched_by_doi(
@@ -366,7 +366,7 @@ def test_pmid_only_record_merges_into_the_work_matched_by_doi(
         preview._locate_raw_files(faculty_with_orcid, raw_base)
     )
 
-    assert [p["_sources"] for p in publications] == [["orcid", "pubmed"]]
+    assert [p["_sources"] for p in publications] == [["ORCID", "PubMed"]]
 
 
 def test_a_source_reporting_a_work_twice_lists_it_once(raw_base, faculty_with_orcid):
@@ -382,7 +382,7 @@ def test_a_source_reporting_a_work_twice_lists_it_once(raw_base, faculty_with_or
         preview._locate_raw_files(faculty_with_orcid, raw_base)
     )
 
-    assert [p["_sources"] for p in publications] == [["orcid"]]
+    assert [p["_sources"] for p in publications] == [["ORCID"]]
 
 
 def test_unidentified_publications_are_labelled_by_their_own_source(
@@ -398,4 +398,4 @@ def test_unidentified_publications_are_labelled_by_their_own_source(
         preview._locate_raw_files(faculty_with_orcid, raw_base)
     )
 
-    assert [p["_sources"] for p in publications] == [["orcid"], ["orcid"]]
+    assert [p["_sources"] for p in publications] == [["ORCID"], ["ORCID"]]

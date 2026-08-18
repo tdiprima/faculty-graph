@@ -265,3 +265,97 @@ def test_the_full_openalex_duplicate_set_collapses_to_one_work():
     assert len(merged) == 1
     assert merged[0]["title"] == CONTAINERIZED
     assert len(merged[0]["alternate_dois"]) == 4
+
+
+def test_merged_work_takes_a_journal_the_primary_record_lacks():
+    """ORCID reported no journal for years; the merge must not lose PubMed's."""
+    merged = identity.merge_publications([
+        {"title": CONTAINERIZED, "doi": "10.1/a", "source": "ORCID", "journal": None},
+        {"title": CONTAINERIZED, "doi": "10.1/a", "source": "PubMed",
+         "journal": "Journal of pathology informatics"},
+    ])
+
+    assert merged[0]["journal"] == "Journal of pathology informatics"
+
+
+def test_openalex_supplies_the_rendered_journal_name():
+    """Sources disagree on case; OpenAlex carries the journal's display name."""
+    merged = identity.merge_publications([
+        {"title": CONTAINERIZED, "doi": "10.1/a", "source": "ORCID",
+         "journal": "Journal of pathology informatics"},
+        {"title": CONTAINERIZED, "doi": "10.1/a", "source": "OpenAlex",
+         "journal": "Journal of Pathology Informatics"},
+    ])
+
+    assert merged[0]["journal"] == "Journal of Pathology Informatics"
+
+
+def test_journal_preference_does_not_depend_on_harvest_order():
+    orcid = {"title": CONTAINERIZED, "doi": "10.1/a", "source": "ORCID",
+             "journal": "Journal of pathology informatics"}
+    openalex = {"title": CONTAINERIZED, "doi": "10.1/a", "source": "OpenAlex",
+                "journal": "Journal of Pathology Informatics"}
+
+    forward = identity.merge_publications([orcid, openalex])
+    reverse = identity.merge_publications([openalex, orcid])
+
+    assert forward[0]["journal"] == reverse[0]["journal"]
+
+
+@pytest.mark.parametrize("aggregator", ["PubMed", "pubmed", "OpenAlex", "Crossref", ""])
+def test_an_aggregator_name_is_not_accepted_as_a_journal(aggregator):
+    """OpenAlex names the index it harvested from as the container title."""
+    assert not identity.is_usable_journal(aggregator)
+
+
+def test_a_real_journal_beats_an_aggregator_name():
+    merged = identity.merge_publications([
+        {"title": CONTAINERIZED, "doi": "10.1/a", "source": "OpenAlex",
+         "journal": "PubMed"},
+        {"title": CONTAINERIZED, "doi": "10.1/a", "source": "PubMed",
+         "journal": "AMIA Joint Summits on Translational Science proceedings"},
+    ])
+
+    assert merged[0]["journal"] == "AMIA Joint Summits on Translational Science proceedings"
+
+
+def test_a_work_no_source_gave_a_journal_keeps_none():
+    merged = identity.merge_publications([
+        {"title": CONTAINERIZED, "doi": "10.1/a", "source": "ORCID"},
+        {"title": CONTAINERIZED, "doi": "10.1/a", "source": "OpenAlex", "journal": ""},
+    ])
+
+    assert not merged[0].get("journal")
+
+
+def test_gap_filling_never_overwrites_a_value_the_primary_supplied():
+    merged = identity.merge_publications([
+        {"title": CONTAINERIZED, "doi": "10.1/a", "type": "article",
+         "date": "2017-10-31", "source": "ORCID"},
+        {"title": f"Data from {CONTAINERIZED}", "doi": "10.1/b", "type": "other",
+         "date": "2023-03-31", "source": "OpenAlex"},
+    ])
+
+    assert merged[0]["date"] == "2017-10-31"
+    assert merged[0]["type"] == "article"
+
+
+def test_gap_filling_does_not_borrow_identifiers():
+    """Only descriptive fields fill; a deposit's DOI must stay an alternate."""
+    merged = identity.merge_publications([
+        {"title": CONTAINERIZED, "pmid": "123", "type": "article", "source": "PubMed"},
+        {"title": f"Data from {CONTAINERIZED}", "pmid": "123", "doi": "10.1/b",
+         "type": "other", "source": "OpenAlex"},
+    ])
+
+    assert merged[0].get("doi") is None
+    assert merged[0]["alternate_dois"] == ["10.1/b"]
+
+
+def test_a_record_with_a_doi_is_preferred_over_one_without():
+    merged = identity.merge_publications([
+        {"title": CONTAINERIZED, "pmid": "123", "source": "PubMed"},
+        {"title": CONTAINERIZED, "pmid": "123", "doi": "10.1/b", "source": "OpenAlex"},
+    ])
+
+    assert merged[0]["doi"] == "10.1/b"

@@ -18,9 +18,24 @@ PUBMED_SEARCH_METHODS = (SEARCH_METHOD_ORCID, SEARCH_METHOD_NAME)
 SOURCE_KEY_SEPARATOR = ":"
 
 
+# The RDF stage and the harvest clients label sources this way, and identity
+# rules key off the same names, so the preview must not invent its own casing.
+SOURCE_DISPLAY_NAMES = {
+    "orcid": "ORCID",
+    "pubmed": "PubMed",
+    "openalex": "OpenAlex",
+}
+
+
 def _base_source(source_key):
     """Return the source name a raw_files key refers to, without its suffix."""
     return source_key.split(SOURCE_KEY_SEPARATOR, 1)[0]
+
+
+def _display_source(source_key):
+    """Return the canonical display name for a raw_files key's source."""
+    base = _base_source(source_key)
+    return SOURCE_DISPLAY_NAMES.get(base, base)
 
 
 def _read_json(path):
@@ -68,7 +83,7 @@ def _load_faculty_publications(raw_files):
             continue
 
         for pub in parsed:
-            pub["source"] = source_name
+            pub["source"] = _display_source(source_key)
             harvested.append(pub)
 
     publications = merge_publications(harvested)
@@ -191,16 +206,16 @@ def _locate_raw_files(faculty, raw_base):
         if orcid_path.exists():
             raw_files["orcid"] = orcid_path
 
-    openalex_path = raw_base / "openalex" / f"{faculty['faculty_id']}.json"
-    if openalex_path.exists():
-        raw_files["openalex"] = openalex_path
-
     for search_method in PUBMED_SEARCH_METHODS:
         pubmed_path = (
             raw_base / "pubmed" / f"{faculty['faculty_id']}-{search_method}.xml"
         )
         if pubmed_path.exists():
             raw_files[f"pubmed{SOURCE_KEY_SEPARATOR}{search_method}"] = pubmed_path
+
+    openalex_path = raw_base / "openalex" / f"{faculty['faculty_id']}.json"
+    if openalex_path.exists():
+        raw_files["openalex"] = openalex_path
 
     return raw_files
 

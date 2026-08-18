@@ -52,6 +52,19 @@ def parse_publication_date(work_summary):
     return year
 
 
+def parse_journal_title(summary):
+    """Extract the containing publication's title from an ORCID work summary.
+
+    ORCID nests the value ({"journal-title": {"value": ...}}) and omits the key
+    entirely for works that have no container.
+    """
+    journal_title = summary.get("journal-title")
+    if not journal_title:
+        return None
+    value = journal_title.get("value")
+    return value.strip() if value else None
+
+
 def parse_works(works_json):
     """Parse ORCID works response into list of publication dicts."""
     publications = []
@@ -82,6 +95,7 @@ def parse_works(works_json):
             "pmid": all_ids.get("pmid"),
             "type": summary.get("type"),
             "date": parse_publication_date(summary),
+            "journal": parse_journal_title(summary),
             "external_ids": all_ids,
             "put_code": summary.get("put-code"),
         }

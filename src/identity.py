@@ -35,6 +35,49 @@ TITLE_KEY_MIN_WORDS = 6
 # so they never win primary selection against a real publication.
 DEPOSIT_TYPES = ("other", "dataset", "supplementary-materials")
 
+# Fields a merged work may take from a sibling record when the primary record
+# left them empty. Identifiers are excluded: those are merged deliberately by
+# collect_alternate_ids, never overwritten by a gap fill.
+GAP_FILLABLE_FIELDS = (
+    "journal",
+    "date",
+    "type",
+    "abstract",
+    "volume",
+    "issue",
+    "pages",
+    "publisher",
+    "url",
+)
+
+# OpenAlex sometimes names the index it pulled a record from as the container
+# title. An aggregator is not a journal, so these values are not gap-fill
+# candidates.
+NON_JOURNAL_VALUES = frozenset({
+    "pubmed",
+    "pubmed central",
+    "openalex",
+    "orcid",
+    "crossref",
+    "datacite",
+    "figshare",
+    "unknown",
+})
+
+
+# Sources disagree on how to render a container title: ORCID and PubMed store
+# NLM-style sentence case ("Journal of pathology informatics") while OpenAlex
+# carries the journal's own display name. Preferring OpenAlex here is about
+# presentation, not trust, so it applies to the journal field alone.
+JOURNAL_SOURCE_PREFERENCE = ("OpenAlex", "PubMed", "ORCID")
+
+
+def is_usable_journal(journal):
+    """Is this a real container title rather than the aggregator's own name?"""
+    if not journal or not str(journal).strip():
+        return False
+    return str(journal).strip().lower() not in NON_JOURNAL_VALUES
+
 
 def normalize_doi(doi):
     """Reduce a DOI to its comparable form.
@@ -217,6 +260,54 @@ def collect_sources(group):
     return sources
 
 
+def choose_journal(group):
+    """Pick the best-rendered container title the group offers.
+
+    Returns None when no record names a real journal, leaving whatever the
+    primary record held.
+    """
+    def rank(publication):
+        source = str(publication.get("source") or "")
+        try:
+            return JOURNAL_SOURCE_PREFERENCE.index(source)
+        except ValueError:
+            return len(JOURNAL_SOURCE_PREFERENCE)
+
+    candidates = [pub for pub in group if is_usable_journal(pub.get("journal"))]
+    if not candidates:
+        return None
+    return min(candidates, key=rank)["journal"].strip()
+
+
+def _is_empty(value):
+    """Is this field value absent for gap-filling purposes?"""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    return False
+
+
+def _fill_gaps(merged, group):
+    """Fill the primary record's empty fields from its siblings, in group order.
+
+    ORCID reports no journal for some works and PubMed reports no abstract for
+    others, so a merged work is more complete than any single source. Only empty
+    fields are filled: a value the primary record supplied is never overwritten.
+    """
+    for field in GAP_FILLABLE_FIELDS:
+        if not _is_empty(merged.get(field)):
+            continue
+        for publication in group:
+            value = publication.get(field)
+            if _is_empty(value):
+                continue
+            if field == "journal" and not is_usable_journal(value):
+                continue
+            merged[field] = value
+            break
+
+
 def merge_group(group):
     """Fold a group of duplicate records into one publication dict.
 
@@ -225,6 +316,12 @@ def merge_group(group):
     """
     primary = choose_primary(group)
     merged = dict(primary)
+
+    _fill_gaps(merged, group)
+
+    journal = choose_journal(group)
+    if journal:
+        merged["journal"] = journal
 
     alternate_dois, alternate_pmids = collect_alternate_ids(group, primary)
     if alternate_dois:
