@@ -24,7 +24,7 @@ the code, not in the queries, not in the vocabulary.
 - Generates static HTML preview pages for each faculty member.
 - Publishes its own vocabulary with alignment axioms to BIBO, Dublin Core,
   PROV-O, W3C Org, FOAF, VIVO, and schema.org.
-- Loads RDF into a triple store (Fuseki or QLever) for SPARQL querying.
+- Loads RDF into a triple store (QLever, or Fuseki) for SPARQL querying.
 
 ## What This Prototype Does Not Do (Yet)
 
@@ -112,8 +112,8 @@ faculty-graph/
 ├── tests/                    # Offline pytest suite
 └── scripts/
     ├── run_harvesters.sh     # Run all harvesters with logging
-    ├── load_graph_fuseki.sh  # Load RDF into Apache Jena Fuseki
-    └── load_graph_qlever.sh  # Load RDF into QLever
+    ├── load_graph_qlever.sh  # Stage RDF for a QLever index build
+    └── load_graph_fuseki.sh  # Load RDF into Apache Jena Fuseki (optional)
 ```
 
 ## Quick Start
@@ -193,9 +193,9 @@ uv run python3 main.py --disambiguate
 # Re-link records across sources from an existing harvest
 uv run python3 main.py --reconcile
 
-# Run a query against Fuseki, resolved from .env
+# Run a query against QLever, resolved from .env
 uv run python3 main.py --query collaborating-institutions | \
-    curl -s http://localhost:3030/faculty/sparql \
+    curl -s http://localhost:7001 \
          --data-urlencode query@- -H "Accept: text/csv"
 ```
 
@@ -259,8 +259,9 @@ immediately with the offending line number rather than midway through a harvest.
    Comma-separate several if your institution holds more than one registered
    entry. Without it the collaboration queries cannot run.
 5. Optionally set `FG_BASE_URI` to a namespace you control. The queries pick this
-   up automatically — they are templates, not fixed text — and so does the Fuseki
-   loader, which names its target graph `${FG_BASE_URI}data`.
+   up automatically — they are templates, not fixed text. QLever needs nothing
+   further; the optional Fuseki loader names its target graph `${FG_BASE_URI}data`
+   from the same value.
 6. Edit `queries/topic-publications.rq` to use the keywords your institution
    reports on.
 
@@ -321,26 +322,43 @@ Review decisions persist across re-harvests. The pipeline never overwrites a hum
 
 ## Loading into a Triple Store
 
+QLever is the target store. It ingests at index build time rather than over
+HTTP, so loading means staging the file and rebuilding the index:
+
 ```bash
-# Fuseki (easiest - runs via Docker)
+./scripts/load_graph_qlever.sh
+cd qlever-data && qlever stop && qlever index && qlever start
+```
+
+`docs/qlever-setup.md` has the full workflow — Qleverfile, Docker, native build,
+and the re-index loop after each harvest.
+
+Both loaders stage `faculty-all.ttl` only: the merged view, which is what a
+browsing endpoint wants. Auditing which source claimed what means indexing
+`by-source/*.ttl` plus `reconciliation.ttl` **instead** — indexing both sets
+together means every merged statement appears twice, since QLever has one
+default graph to put them in.
+
+### Fuseki (optional)
+
+Fuseki still works and the loader is maintained, but it needs one thing QLever
+does not:
+
+```bash
 docker run -d --name fuseki -p 3030:3030 apache/jena-fuseki
 curl -X POST http://localhost:3030/$/datasets -d 'dbName=faculty&dbType=tdb2'
 ./scripts/load_graph_fuseki.sh http://localhost:3030 faculty
-
-# QLever
-./scripts/load_graph_qlever.sh http://localhost:7001
 ```
-
-Both scripts load `faculty-all.ttl` only — the merged view, which is the right
-default for a browsing endpoint. Auditing which source claimed what means loading
-`by-source/*.ttl` and `reconciliation.ttl` into named graphs of their own instead;
-loading both sets together gives you the same statements twice.
 
 `load_graph_fuseki.sh` writes into the named graph `${FG_BASE_URI}data`, read
 from your shell or `.env` so it cannot drift from the namespace the RDF was
-generated under. Set `GRAPH_URI` to override it outright. Because the shipped
-queries carry no `GRAPH` clause, they read the default graph — the script checks
-after loading and tells you if that leaves them returning nothing.
+generated under; set `GRAPH_URI` to override it outright. Because the shipped
+queries carry no `GRAPH` clause, they read Fuseki's default graph, which stays
+empty after a named-graph load — so either enable `tdb2:unionDefaultGraph` on the
+dataset or wrap each query in `GRAPH <...> { ... }`. The script checks after
+loading and says so if this would leave you with zero rows. None of this applies
+to QLever, which indexes into the default graph the queries already read.
+
 `docs/deployment.md` covers the rest of the server setup.
 
 ## Data Model

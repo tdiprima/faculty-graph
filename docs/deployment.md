@@ -6,7 +6,7 @@ Steps for moving the prototype from local development to a server.
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) for dependency management
-- A triple store (Fuseki or QLever)
+- QLever (the target triple store; Fuseki also works — see below)
 - Git access to this repo
 
 ## Setup
@@ -62,13 +62,20 @@ The suite runs offline, so this is safe to run on the server before the first
 harvest. It also confirms the generated Turtle parses, which is the failure mode
 that silently produces output no triple store will load.
 
-## QLever Setup
+## QLever Setup (primary)
 
 See [qlever-setup.md](qlever-setup.md) for full QLever installation and
 configuration instructions (Docker, native build, Qleverfile config, re-indexing
 workflow).
 
-## Fuseki Setup
+QLever ingests at index build time, so there is no upload step and no named
+graph to configure — it indexes into the default graph, which is where the
+queries in `queries/` read from.
+
+## Fuseki Setup (optional)
+
+Kept working for local experiments and for anyone who wants SPARQL UPDATE. It is
+not the deployment target.
 
 ```bash
 # Run Fuseki via Docker
@@ -107,16 +114,27 @@ uv run python3 main.py --preview
 | `by-source/*.ttl` | One graph per source, unmerged. This is the harvest of record: it says only what that source reported. |
 | `reconciliation.ttl` | Only the links between the per-source graphs, as `fg:MatchAssertion` nodes with method and confidence. `owl:sameAs` appears only for full-confidence matches. |
 
-`scripts/load_graph_fuseki.sh` and `scripts/load_graph_qlever.sh` load
-`faculty-all.ttl` only. That is the right default for a browsing endpoint, but a
-consumer that needs to see which source claimed what — or to audit a merge —
-needs `by-source/` plus `reconciliation.ttl` loaded into separate named graphs
-instead. Loading both sets into one graph gives you the merged data twice.
+Both loaders stage `faculty-all.ttl` only. That is the right default for a
+browsing endpoint, but a consumer that needs to see which source claimed what —
+or to audit a merge — wants `by-source/*.ttl` plus `reconciliation.ttl`
+**instead**. Indexing both sets into QLever's single default graph would give you
+every merged statement twice; on Fuseki they can be kept apart as named graphs.
 
 ```bash
-# Load the merged view into Fuseki
+# Stage the merged view for QLever, then rebuild the index
+./scripts/load_graph_qlever.sh
+cd qlever-data
+qlever stop
+qlever index
+qlever start
+
+# Or, for Fuseki
 ./scripts/load_graph_fuseki.sh http://localhost:3030 faculty
 ```
+
+Re-indexing is the reload mechanism: QLever serves the previous index until the
+new one is built and the server restarted. The staging script reports the running
+server's current triple count as the *before* number for exactly that reason.
 
 ### Namespace and named graph
 
@@ -216,8 +234,14 @@ scheduled step once the run's output has been checked.
 ## Verify
 
 ```bash
-# Check SPARQL endpoint. load_graph_fuseki.sh writes into a named graph, so the
-# count must target it -- a query against the default graph returns 0.
+# Check the QLever endpoint. QLever indexes into the default graph, so a plain
+# pattern counts everything.
+curl -s 'http://localhost:7001' \
+    --data-urlencode 'query=SELECT (COUNT(*) as ?n) WHERE { ?s ?p ?o }' \
+    -H 'Accept: application/sparql-results+json'
+
+# Fuseki instead. load_graph_fuseki.sh writes into a named graph, so the count
+# must target it -- a query against the default graph returns 0.
 curl -s 'http://localhost:3030/faculty/sparql' \
     --data-urlencode 'query=SELECT (COUNT(*) as ?n) WHERE {
         GRAPH <http://example.org/faculty-graph/data> { ?s ?p ?o } }' \
@@ -233,6 +257,6 @@ uv run python3 main.py --query pending-reconciliation-review
 ## Network Access
 
 If SPARQL endpoint needs to be accessible:
-- Request ports 3030 (Fuseki) or 7001 (QLever) opened
+- Request port 7001 (QLever) opened, or 3030 if running Fuseki
 - Consider VPN-only access for initial prototype
 - No public access until data is reviewed

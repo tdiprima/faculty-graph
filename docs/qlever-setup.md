@@ -6,7 +6,7 @@ QLever is a high-performance SPARQL engine developed at the University of Freibu
 
 - Docker (recommended) or a native build
 - At least 4 GB RAM for indexing
-- Generated RDF files from `python3 main.py`
+- Generated RDF files from `uv run python3 main.py`
 
 ## Option 1: Docker (Recommended)
 
@@ -25,12 +25,17 @@ cd /opt/qlever-faculty
 
 ### Create a Qleverfile
 
-Create `/opt/qlever-faculty/Qleverfile` with this content:
+Create `/opt/qlever-faculty/Qleverfile` with this content. Qleverfile keys have
+changed between QLever releases, so if `qlever index` rejects one, check
+`qlever setup-config` output for the version you installed:
 
 ```ini
 [data]
 NAME = faculty
-GET_DATA_CMD = cat /input/faculty-all.ttl
+# The staging script has already put faculty-all.ttl in this directory, so
+# there is nothing to fetch. A GET_DATA_CMD pointing somewhere else would
+# quietly index stale data, or nothing at all.
+GET_DATA_CMD = echo "using staged faculty-all.ttl"
 DATA_FORMAT = ttl
 
 [index]
@@ -49,8 +54,8 @@ IMAGE = adfreiburg/qlever
 ### Build and run
 
 ```bash
-# Copy RDF data into the working directory
-cp /opt/faculty-graph/data/output/rdf/faculty-all.ttl /opt/qlever-faculty/
+# Stage the RDF into the working directory
+QLEVER_DATA_DIR=/opt/qlever-faculty /opt/faculty-graph/scripts/load_graph_qlever.sh
 
 # Build the index
 qlever index
@@ -77,12 +82,16 @@ curl -s 'http://localhost:7001' \
 QLever requires re-indexing when data changes:
 
 ```bash
+QLEVER_DATA_DIR=/opt/qlever-faculty /opt/faculty-graph/scripts/load_graph_qlever.sh
 cd /opt/qlever-faculty
-cp /opt/faculty-graph/data/output/rdf/faculty-all.ttl .
 qlever stop
 qlever index
 qlever start
 ```
+
+The server keeps serving the previous index until `qlever start` runs against
+the new one, so a re-harvest never leaves the endpoint down — but it also means
+a count taken before the restart reports the old data.
 
 ## Option 2: Docker without the CLI
 
@@ -135,13 +144,33 @@ Then use `IndexBuilderMain` and `ServerMain` directly instead of Docker.
 
 ## Loading with the faculty-graph script
 
-After QLever is running:
-
 ```bash
-./scripts/load_graph_qlever.sh http://localhost:7001
+./scripts/load_graph_qlever.sh
 ```
 
-This copies the RDF and prints the re-index steps.
+The script copies `faculty-all.ttl` into `QLEVER_DATA_DIR` (default
+`qlever-data/` in the project root) and prints the index and start commands for
+whichever toolchain is installed — the `qlever` CLI if it is on PATH, otherwise
+the equivalent Docker invocations. It loads nothing itself, because QLever has
+no upload endpoint to load into.
+
+If a server is already running at the endpoint, the script reports its current
+triple count. That number is the *previous* index: it changes only after a
+rebuild and restart.
+
+### Which files to index
+
+The staging script uses `faculty-all.ttl`, the merged view. To audit sources
+instead, set `INPUT_FILES` to the per-source graphs and the links between them:
+
+```ini
+[index]
+INPUT_FILES = by-source/*.ttl reconciliation.ttl
+```
+
+Pick one or the other. QLever indexes everything into a single default graph, so
+indexing the merged view *and* the per-source graphs means every statement the
+merge kept appears twice, from two different subject IRIs.
 
 ## QLever UI (optional)
 
