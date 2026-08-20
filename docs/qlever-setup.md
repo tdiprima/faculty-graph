@@ -160,17 +160,29 @@ rebuild and restart.
 
 ### Which files to index
 
-The staging script uses `faculty-all.ttl`, the merged view. To audit sources
-instead, set `INPUT_FILES` to the per-source graphs and the links between them:
+**The production index is `faculty-all.ttl` only.** That is settled — see
+decision 014 in `decisions.md`. `by-source/*.ttl` and `reconciliation.ttl` are
+audit artifacts: read them, query them ad hoc, reload them after a bad merge, but
+keep them out of the index QLever serves.
+
+The reason is that QLever indexes into a single default graph. `faculty-all.ttl`
+already merges what the per-source graphs state separately, so indexing both puts
+those facts in twice under different subject IRIs. The data would not be *wrong*,
+but every count, join, and aggregate would have to account for the duplication,
+and the first query that forgets inflates its numbers with nothing to signal it.
+
+There is a non-default provenance profile for the case where sources must be
+queryable rather than auditable:
 
 ```ini
 [index]
 INPUT_FILES = by-source/*.ttl reconciliation.ttl
 ```
 
-Pick one or the other. QLever indexes everything into a single default graph, so
-indexing the merged view *and* the per-source graphs means every statement the
-merge kept appears twice, from two different subject IRIs.
+Use it in a *separate* index, never alongside the canonical one. If per-source
+querying becomes a standing requirement rather than an occasional check, the
+answer is Fuseki named graphs or a QLever quads representation — not merging the
+two profiles into one index.
 
 ## QLever UI (optional)
 

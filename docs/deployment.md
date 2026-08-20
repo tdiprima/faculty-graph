@@ -114,11 +114,13 @@ uv run python3 main.py --preview
 | `by-source/*.ttl` | One graph per source, unmerged. This is the harvest of record: it says only what that source reported. |
 | `reconciliation.ttl` | Only the links between the per-source graphs, as `fg:MatchAssertion` nodes with method and confidence. `owl:sameAs` appears only for full-confidence matches. |
 
-Both loaders stage `faculty-all.ttl` only. That is the right default for a
-browsing endpoint, but a consumer that needs to see which source claimed what —
-or to audit a merge — wants `by-source/*.ttl` plus `reconciliation.ttl`
-**instead**. Indexing both sets into QLever's single default graph would give you
-every merged statement twice; on Fuseki they can be kept apart as named graphs.
+Both loaders stage `faculty-all.ttl` only. For QLever this is fixed policy, not
+a convenience: the production index is the canonical merged view, and
+`by-source/*.ttl` plus `reconciliation.ttl` stay audit artifacts outside it.
+Indexing both sets into QLever's single default graph would give you every merged
+statement twice, under two subject IRIs. Query the per-source graphs ad hoc, or
+build a second index from them; on Fuseki they can be kept apart as named graphs.
+See decision 014.
 
 ```bash
 # Stage the merged view for QLever, then rebuild the index

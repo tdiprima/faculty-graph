@@ -333,11 +333,13 @@ cd qlever-data && qlever stop && qlever index && qlever start
 `docs/qlever-setup.md` has the full workflow — Qleverfile, Docker, native build,
 and the re-index loop after each harvest.
 
-Both loaders stage `faculty-all.ttl` only: the merged view, which is what a
-browsing endpoint wants. Auditing which source claimed what means indexing
-`by-source/*.ttl` plus `reconciliation.ttl` **instead** — indexing both sets
-together means every merged statement appears twice, since QLever has one
-default graph to put them in.
+Both loaders stage `faculty-all.ttl` only, and for QLever that is the settled
+policy rather than a default: the served index is the canonical merged view.
+`by-source/*.ttl` and `reconciliation.ttl` stay audit artifacts outside it,
+because QLever has one default graph and indexing both sets would put every
+merged fact in twice under different subject IRIs. `docs/qlever-setup.md`
+describes the separate provenance profile for when sources need to be queried
+rather than audited; decision 014 records why it is not the default.
 
 ### Fuseki (optional)
 
