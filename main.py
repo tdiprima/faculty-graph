@@ -2,7 +2,7 @@
 
 Usage:
     python3 main.py                     # Run all harvesters + RDF output
-    python3 main.py --full              # Harvest + disambiguate + preview
+    python3 main.py --full              # Harvest + disambiguate + reconcile + preview
     python3 main.py --source orcid      # Run ORCID only
     python3 main.py --source pubmed     # Run PubMed only
     python3 main.py --source openalex   # Run OpenAlex only

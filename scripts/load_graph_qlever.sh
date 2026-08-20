@@ -3,6 +3,10 @@
 # Load generated RDF Turtle files into a QLever instance.
 # Expects QLever to be running and the qlever CLI available.
 #
+# Unlike the Fuseki loader there is no graph URI to configure: QLever ingests at
+# index build time into the default graph, which is where the queries in
+# queries/ read from. Nothing here needs to track FG_BASE_URI.
+#
 # Usage: ./scripts/load_graph_qlever.sh [qlever_endpoint]
 # Example: ./scripts/load_graph_qlever.sh http://localhost:7001
 

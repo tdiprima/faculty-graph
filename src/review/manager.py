@@ -57,7 +57,7 @@ class ReviewManager:
 
         if yaml is None:
             logger.warning(
-                "PyYAML not installed. Install with: pip install pyyaml. "
+                "PyYAML not installed. Install with: uv sync --extra review. "
                 "Skipping review file."
             )
             return

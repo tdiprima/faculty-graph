@@ -259,9 +259,8 @@ immediately with the offending line number rather than midway through a harvest.
    Comma-separate several if your institution holds more than one registered
    entry. Without it the collaboration queries cannot run.
 5. Optionally set `FG_BASE_URI` to a namespace you control. The queries pick this
-   up automatically — they are templates, not fixed text. The loader scripts do
-   not: `GRAPH_URI` in `scripts/load_graph_fuseki.sh` is a fixed string, so edit
-   it to match, or the data lands in a named graph nothing else queries.
+   up automatically — they are templates, not fixed text — and so does the Fuseki
+   loader, which names its target graph `${FG_BASE_URI}data`.
 6. Edit `queries/topic-publications.rq` to use the keywords your institution
    reports on.
 
@@ -337,10 +336,12 @@ default for a browsing endpoint. Auditing which source claimed what means loadin
 `by-source/*.ttl` and `reconciliation.ttl` into named graphs of their own instead;
 loading both sets together gives you the same statements twice.
 
-`load_graph_fuseki.sh` writes into the named graph
-`http://example.org/faculty-graph/data`, hardcoded in the script and independent
-of `FG_BASE_URI`. `docs/deployment.md` covers this and the rest of the server
-setup.
+`load_graph_fuseki.sh` writes into the named graph `${FG_BASE_URI}data`, read
+from your shell or `.env` so it cannot drift from the namespace the RDF was
+generated under. Set `GRAPH_URI` to override it outright. Because the shipped
+queries carry no `GRAPH` clause, they read the default graph — the script checks
+after loading and tells you if that leaves them returning nothing.
+`docs/deployment.md` covers the rest of the server setup.
 
 ## Data Model
 

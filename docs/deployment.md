@@ -120,11 +120,27 @@ instead. Loading both sets into one graph gives you the merged data twice.
 
 ### Namespace and named graph
 
-`load_graph_fuseki.sh` writes into the named graph
-`http://example.org/faculty-graph/data`, which is hardcoded in the script and
-does **not** follow `FG_BASE_URI`. If you change `FG_BASE_URI` for a real
-deployment, edit `GRAPH_URI` in that script to match, or you will have data in a
-namespace that no verification query below targets.
+`load_graph_fuseki.sh` derives its target named graph as `${FG_BASE_URI}data`,
+reading `FG_BASE_URI` from the shell first, then `.env`, then falling back to
+`http://example.org/faculty-graph/` — the same precedence the pipeline uses, so
+the loader cannot drift from the namespace the RDF was generated under. Set
+`GRAPH_URI` to load somewhere else regardless. A malformed or empty value is
+rejected with exit code 2 rather than defaulted.
+
+The QLever loader has no equivalent setting: QLever ingests at index build time
+into the default graph.
+
+The queries in `queries/` carry no `GRAPH` clause, so they read the default
+graph, which on a stock TDB2 dataset stays empty after a named-graph load. The
+Fuseki script checks this after uploading and prints what to do about it — either
+enable a union default graph on the dataset:
+
+```turtle
+tdb2:unionDefaultGraph true ;
+```
+
+or wrap each query in `GRAPH <...> { ... }`. Verification queries below target the
+named graph explicitly, so they report triples either way.
 
 ### Queries
 
