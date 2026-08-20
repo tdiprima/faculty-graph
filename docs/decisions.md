@@ -43,3 +43,39 @@ Record decisions here so future-you knows why things are the way they are.
 **Date:** 2026-08-18
 **Decision:** `HarvestError` is raised when an OpenAlex cursor walk cannot finish. The harvest for that faculty member yields nothing and writes no raw file.
 **Reason:** The pagination loop used to `break` on a network failure and return the pages it had, which is indistinguishable from a complete result. Those truncated records were then written into the graph as `authoritative` provenance. For a project whose whole point is trustworthy provenance, silently losing publications is worse than failing one person's harvest. Failures are logged per faculty member so one bad response does not abort the run.
+
+## 008 - A truncated LLM answer is an error, not a "no"
+
+**Date:** 2026-08-18
+**Decision:** `src/disambiguate/scorer.py` sends `think: False` and `format: "json"`, budgets `MAX_RESPONSE_TOKENS = 500`, and treats `done_reason == "length"` or an empty response body as a logged failure that returns `None`.
+**Reason:** A thinking-capable model spent the whole 300-token budget on hidden reasoning and returned `response: ""`. The JSON decode then failed with `Expecting value: line 1 column 1 (char 0)`, which reads like a malformed answer rather than a missing one — the operator has no way to tell "the model judged this a non-match" from "the model never got to answer." Naming the truncation in the error message says which knob to turn.
+
+## 009 - Organizations are identified by their ROR IRI
+
+**Date:** 2026-08-18
+**Decision:** When a ROR ID is known, `https://ror.org/{id}` *is* the subject IRI of the organization — no locally minted IRI, no `owl:sameAs` bridge. Names are normalized into a local IRI only when no ROR is available. A malformed ROR arriving in harvest data logs a warning and degrades to a local IRI; a malformed ROR in *configuration* fails at startup.
+**Reason:** Two sources spelling "Example University" differently converge for free if both carry the same ROR, and any consumer outside this project resolves the same IRI to the same registry record. Minting our own IRI and linking it would mean every consumer has to follow the link to learn anything. The asymmetric handling of bad IDs follows from where the value came from: harvest data is untrusted and one bad record must not abort a run, while configuration is ours and a typo there silently mislabels every collaboration in the graph.
+
+## 010 - Institution identity lives in .env, not in the queries
+
+**Date:** 2026-08-18
+**Decision:** `INSTITUTION_ROR` (comma-separated, so an institution with several registered entries counts as one "us") and `FG_BASE_URI` are read from the environment at runtime. Files in `queries/` are templates using `{{PLACEHOLDER}}`; `src/queries.py` substitutes at generation time and raises `ConfigError` on an unknown placeholder, an empty value, or any placeholder still standing after substitution.
+**Reason:** The collaboration queries hardcoded Example University's ROR in a `VALUES` clause and the rest hardcoded the default namespace, so adopting the pipeline meant hand-editing eleven `.rq` files and keeping them in sync with `.env`. Failing loudly on an unresolved placeholder matters more than it sounds: a SPARQL query with a leftover `{{...}}` is a syntax error, but one where a placeholder resolved to an empty string is *valid* and quietly returns the wrong rows. Note that Example University (`abc123456`) and Example University Hospital (`abc123456`) are separate ROR records; listing only the first reports the hospital as an outside collaborator.
+
+## 011 - Reconciliation is a separate phase with reviewable assertions
+
+**Date:** 2026-08-18
+**Decision:** Cross-source linking moved out of conversion into `src/reconcile/`, run by `--reconcile` and written to its own `reconciliation.ttl`. Each link is an `fg:MatchAssertion` carrying `fg:matchMethod` and `fg:matchConfidence`; `owl:sameAs` is emitted only at `SAME_AS_CONFIDENCE = 1.0`.
+**Reason:** The feedback asked for each source's data to stay organized as harvested and be reconciled later. Merging inline during conversion left no artifact to review — a wrong merge could only be found by reading the merged output and inferring what had happened. A standalone file of assertions can be queried (`pending-reconciliation-review.rq`), corrected, and regenerated without re-harvesting. Reserving `owl:sameAs` for certainty keeps a reasoner from propagating a guess: `owl:sameAs` is not a hint, it licenses every statement about one node to be inferred about the other.
+
+## 012 - A match method must be shared by every member of the group
+
+**Date:** 2026-08-18
+**Decision:** `group_match_method` intersects `identity_keys` across all members and reports the strongest key *present in the intersection*, not the strongest key any member carries.
+**Reason:** The first implementation reported the strongest identifier each record happened to have. Two records with **different** DOIs that grouped on a matching title were therefore reported as a DOI match at confidence 1.0 — which under decision 011 emits `owl:sameAs` between two genuinely different works, the single worst thing this pipeline can do. Caught by a test before it ever ran on real data; the test remains as the regression guard.
+
+## 013 - The fg: vocabulary is defined in a file, not implied by output
+
+**Date:** 2026-08-18
+**Decision:** `ontology/fg.ttl` declares every `fg:` class and property with domain, range, and alignment axioms onto BIBO, Dublin Core, FOAF, PROV-O, W3C Org, and VIVO. Properties shared by two classes get an `owl:unionOf` domain. `docs/modeling-rules.md` states the commitments the ontology cannot express.
+**Reason:** The feedback accepts a custom model provided it is well-specified enough to ETL cleanly onto whatever the ontology group standardizes. Terms that exist only as strings in a converter are not specified — the mapping would have to be reverse-engineered from sample output, which finds the common cases and misses the rare ones. The `owl:unionOf` detail is worth stating because it is an easy and silent mistake: two `rdfs:domain` statements mean a subject is in *both* classes, so writing them out would have asserted that every publication assertion is also an authorship.

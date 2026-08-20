@@ -26,20 +26,39 @@ proposes a phased plan.
    it is well-specified enough to ETL cleanly onto whatever standard emerges from
    the ontology group's "minimal set of terms for library-type information."
 
-## Where the Current Code Stands
+## Where the Code Stood at Review Time
 
-Concerns 6 and 7 are partly satisfied already, the rest are not.
+This table is a snapshot taken *before* the phases below were carried out. It is
+kept because the plan only makes sense against the state it was written for; see
+"Where the Code Stands Now" underneath for what changed. Evidence cites function
+names rather than line numbers, which rot.
 
 | # | Concern | Status | Evidence |
 |---|---|---|---|
-| 1 | Not roster-centric | **Not met** | `convert_all_to_rdf` (`src/rdf_model/converter.py:293`) keys the entire graph by `faculty_id` from the seed CSV. A person absent from `data/seed/faculty.csv` cannot appear as anything but an unlinked co-author. |
-| 2 | Collaboration visible | **Not met** | `_extract_coauthors` (`src/harvest_openalex/parser.py:27`) does collect each author's institutions, but `coauthor_to_turtle` (`src/rdf_model/converter.py:229`) emits only name and ORCID. The institution list is dropped before it reaches RDF. PubMed affiliations are never parsed at all. |
+| 1 | Not roster-centric | **Not met** | `convert_all_to_rdf` (`src/rdf_model/converter.py`) keys the entire graph by `faculty_id` from the seed CSV. A person absent from `data/seed/faculty.csv` cannot appear as anything but an unlinked co-author. |
+| 2 | Collaboration visible | **Not met** | `_extract_coauthors` (`src/harvest_openalex/parser.py`) does collect each author's institutions, but `coauthor_to_turtle` (`src/rdf_model/converter.py`) emits only name and ORCID. The institution list is dropped before it reaches RDF. PubMed affiliations are never parsed at all. |
 | 3 | Volume / issue / pages | **Not met** | No parser extracts them. PubMed XML carries `Journal/JournalIssue/Volume`, `Issue`, and `Pagination/MedlinePgn` in responses we already fetch and discard. |
-| 4 | Organizational hierarchy | **Not met** | Department is a bare string literal on the person: `fg:department "Biomedical Informatics"` (`src/rdf_model/converter.py:128`). No university, no institute, no containment. |
+| 4 | Organizational hierarchy | **Not met** | Department is a bare string literal on the person: `fg:department "Biomedical Informatics"` (`src/rdf_model/converter.py`). No university, no institute, no containment. |
 | 5 | ROR identifiers | **Not met** | ROR appears nowhere in the codebase. OpenAlex returns a ROR ID on every institution object we currently discard. |
-| 6 | Per-source organisation, later reconciliation | **Partly met** | Good: raw responses are kept per source under `data/raw/`, and every harvested record emits its own `fg:PublicationAssertion` with `fg:source` and `prov:wasAttributedTo`, so provenance survives. Gap: work merging happens inline during conversion (`merge_group`, `src/rdf_model/converter.py:272`), so reconciliation is not a separately runnable, separately reviewable phase. |
-| 7 | Fields kept separate | **Not met** | `_parse_authors` (`src/harvest_pubmed/parser.py:38`) reads `LastName` and `ForeName` as distinct XML elements and then concatenates them into one string, which is precisely the loss the feedback warns about. Only `foaf:name` is emitted. |
+| 6 | Per-source organisation, later reconciliation | **Partly met** | Good: raw responses are kept per source under `data/raw/`, and every harvested record emits its own `fg:PublicationAssertion` with `fg:source` and `prov:wasAttributedTo`, so provenance survives. Gap: work merging happens inline during conversion (`merge_group`, then in the converter's merge path), so reconciliation is not a separately runnable, separately reviewable phase. |
+| 7 | Fields kept separate | **Not met** | `_parse_authors` (`src/harvest_pubmed/parser.py`) reads `LastName` and `ForeName` as distinct XML elements and then concatenates them into one string, which is precisely the loss the feedback warns about. Only `foaf:name` is emitted. |
 | 8 | Mappable to a standard | **Partly met** | Standard vocabularies are already used where they fit (`bibo`, `dcterms`, `foaf`, `prov`). Gap: the `fg:` terms are not defined anywhere — there is no ontology file stating what `fg:PublicationAssertion` means or what its domain and range are, which is what an ETL onto another model would need. |
+
+## Where the Code Stands Now
+
+All four phases below are complete. Concern by concern:
+
+| # | Concern | Now | Where |
+|---|---|---|---|
+| 1 | Not roster-centric | **Still open** | The graph is still keyed by `faculty_id` from the seed CSV. Organizations and co-authors are now first-class, so the structure no longer *requires* a roster, but the entry point does. See "Demote the Seed CSV" below — proposed, not decided. |
+| 2 | Collaboration visible | **Met** | `fg:Authorship` links work, person, and organization. `queries/collaborating-institutions.rq` and `collaborators-by-institution.rq` answer it directly. |
+| 3 | Volume / issue / pages | **Met** | `bibo:volume`, `bibo:issue`, `bibo:pageStart` / `bibo:pageEnd` alongside the printed `bibo:pages`, plus ISSN, from `src/harvest_pubmed/parser.py` and `src/harvest_openalex/parser.py`. |
+| 4 | Organizational hierarchy | **Partly met** | `org:subOrganizationOf` links department to institution. Institutes, schools, and colleges between them are still not modelled — recorded as a known gap in `modeling-rules.md`. |
+| 5 | ROR identifiers | **Met** | A known ROR IRI *is* the organization's subject IRI (decision 009). Configured per deployment via `INSTITUTION_ROR`. Not met: looking up a ROR for an organization absent from the harvest, which needs a network boundary of its own. |
+| 6 | Per-source organisation, later reconciliation | **Met** | `--reconcile` reads `by-source/*.ttl` and writes only links, into `reconciliation.ttl` (decision 011). |
+| 7 | Fields kept separate | **Met** | `src/names.py`; a split of a rendered display name is labelled a guess with `fg:nameSource`, and no guess is made where the form is ambiguous. |
+| 8 | Mappable to a standard | **Met** | `ontology/fg.ttl`, with `tests/test_ontology.py` failing on a term that is emitted but undefined or defined but unused. |
+
 
 ## Plan
 
@@ -122,6 +141,26 @@ concrete rather than a description.
    concatenated, every assertion carries its source, and every locally minted IRI
    states what external identifier it stands for.
 
+### Phase 5 — Make institution identity configurable — **done**
+
+Not in the original plan; it surfaced while doing Phase 2, when the collaboration
+queries turned out to need a hardcoded ROR to say who "we" are.
+
+1. **Read institution identity from the environment.** `INSTITUTION_ROR` accepts
+   several comma-separated RORs, because one institution can hold more than one
+   registered entry and a paper shared between two of them is internal, not a
+   collaboration.
+2. **Turn `queries/` into templates.** Placeholders are resolved at generation
+   time from the same configuration the pipeline runs on, so pointing the
+   pipeline at a different institution is an `.env` edit rather than a sweep
+   through eleven `.rq` files.
+3. **Fail loud on an unresolved placeholder.** A leftover `{{...}}` is a SPARQL
+   syntax error, but a placeholder that resolved to an empty string produces a
+   *valid* query returning the wrong rows.
+
+See decision 010 in `decisions.md`.
+
+
 ## Recommendation: Demote the Seed CSV
 
 The current pipeline treats `data/seed/faculty.csv` as the definitive list of who
@@ -163,11 +202,5 @@ trustworthy.
 
 ### Open questions for the next review
 
-1. Is institution-wide harvesting in scope, or should the roster remain the
-   discovery mechanism with everything else treated as enrichment?
-2. For TCI work, is the scope an institution, a grant, a topic, or a cohort? The
-   answer determines what replaces the roster as the harvest entry point.
-3. How much unreviewed data is acceptable in the published graph? Institution-wide
-   harvesting means most assertions will never be seen by a human.
-4. Should collaboration counts include all co-authors, or only those with a
-   resolvable ROR ID?
+These are tracked in [questions.md](questions.md) alongside the questions this
+work has already answered, so there is one register rather than two.
