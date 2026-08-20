@@ -15,7 +15,7 @@ test -f .env || cp .env.example .env
 test -f data/seed/faculty.csv || cp data/seed/faculty.csv.example data/seed/faculty.csv
 vim .env
 vim data/seed/faculty.csv
-uv run python3 main.py
+uv run python main.py
 ```
 
 After that, look here:
@@ -29,7 +29,7 @@ data/output/rdf/faculty-all.ttl
 To make HTML preview pages too:
 
 ```bash
-uv run python3 main.py --preview
+uv run python main.py --preview
 ```
 
 Open the generated files in:
@@ -66,7 +66,7 @@ pipeline imports.
 If `uv` is not installed, install it first:
 
 ```bash
-python3 -m pip install uv
+python -m pip install uv
 ```
 
 Then run `uv sync --extra all` again.
@@ -133,7 +133,7 @@ Why ORCID matters: ORCID matches are much more trustworthy than name searches.
 ### 5. Run A Tiny Sanity Check
 
 ```bash
-uv run python3 main.py --list-queries
+uv run python main.py --list-queries
 ```
 
 If this prints query names, the app can start and read config.
@@ -141,7 +141,7 @@ If this prints query names, the app can start and read config.
 ### 6. Run The Harvest
 
 ```bash
-uv run python3 main.py
+uv run python main.py
 ```
 
 This harvests all three sources:
@@ -165,7 +165,7 @@ data/output/rdf/faculty-all.ttl
 ### 7. Generate Preview Pages
 
 ```bash
-uv run python3 main.py --preview
+uv run python main.py --preview
 ```
 
 Then open the HTML files in:
@@ -179,49 +179,49 @@ data/output/previews/
 Harvest everything:
 
 ```bash
-uv run python3 main.py
+uv run python main.py
 ```
 
 Harvest only ORCID:
 
 ```bash
-uv run python3 main.py --source orcid
+uv run python main.py --source orcid
 ```
 
 Harvest only PubMed:
 
 ```bash
-uv run python3 main.py --source pubmed
+uv run python main.py --source pubmed
 ```
 
 Harvest only OpenAlex:
 
 ```bash
-uv run python3 main.py --source openalex
+uv run python main.py --source openalex
 ```
 
 Regenerate previews without downloading anything new:
 
 ```bash
-uv run python3 main.py --preview
+uv run python main.py --preview
 ```
 
 Run reconciliation without downloading anything new:
 
 ```bash
-uv run python3 main.py --reconcile
+uv run python main.py --reconcile
 ```
 
 Print one SPARQL query:
 
 ```bash
-uv run python3 main.py --query collaborating-institutions
+uv run python main.py --query collaborating-institutions
 ```
 
 Write all resolved SPARQL queries:
 
 ```bash
-uv run python3 main.py --write-queries
+uv run python main.py --write-queries
 ```
 
 Run tests:
@@ -236,7 +236,7 @@ uv run pytest
 This command does the most:
 
 ```bash
-uv run python3 main.py --full
+uv run python main.py --full
 ```
 
 It runs:
@@ -258,9 +258,9 @@ OLLAMA_MODEL="gemma4"
 If you do not have Ollama ready, do this instead:
 
 ```bash
-uv run python3 main.py
-uv run python3 main.py --reconcile
-uv run python3 main.py --preview
+uv run python main.py
+uv run python main.py --reconcile
+uv run python main.py --preview
 ```
 
 That skips the LLM step.
@@ -298,7 +298,7 @@ Use QLever if you do not already have a different store picked.
 First generate RDF:
 
 ```bash
-uv run python3 main.py
+uv run python main.py
 ```
 
 Then stage it for QLever:
@@ -368,9 +368,9 @@ Ollama is probably not running, or the configured model is not available.
 Use the no-LLM path:
 
 ```bash
-uv run python3 main.py
-uv run python3 main.py --reconcile
-uv run python3 main.py --preview
+uv run python main.py
+uv run python main.py --reconcile
+uv run python main.py --preview
 ```
 
 ### Dependency Problems
