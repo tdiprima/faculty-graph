@@ -67,13 +67,6 @@ Run everything, including disambiguation, reconciliation, and previews:
 uv run python main.py --full
 ```
 
-Run tests:
-
-```bash
-uv sync --extra dev
-uv run pytest
-```
-
 If `uv` is not installed:
 
 ```bash
