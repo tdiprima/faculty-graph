@@ -17,6 +17,7 @@ from src.identity import (
     normalize_doi,
     normalize_pmid,
 )
+from src.names import display_name_record, structured_name
 from src.rdf_model.organizations import (
     OrganizationRegistry,
     build_organization,
@@ -250,6 +251,21 @@ def _page_lines(pages):
     return lines
 
 
+def faculty_name(faculty):
+    """Build a name record for a seed faculty member.
+
+    A seed list that states given and family names separately is believed; one
+    that gives only full_name is split by the same rules co-author names go
+    through, and carries the same fg:nameSource marker saying the split is a
+    guess.
+    """
+    if faculty.get("given_name") and faculty.get("family_name"):
+        return structured_name(
+            faculty["given_name"], faculty["family_name"], faculty["full_name"]
+        )
+    return display_name_record(faculty["full_name"])
+
+
 def faculty_to_turtle(faculty, department_uri=None):
     """Generate Turtle triples for a faculty member.
 
@@ -259,13 +275,30 @@ def faculty_to_turtle(faculty, department_uri=None):
     unauditable.
     """
     faculty_id = faculty["faculty_id"]
+    name = faculty_name(faculty)
     lines = [
         build_faculty_uri(faculty_id),
         f"    a                   foaf:Person ;",
         f'    foaf:name           "{escape_turtle_string(faculty["full_name"])}" ;',
+    ]
+
+    if name["given_name"]:
+        lines.append(
+            f'    foaf:givenName      "{escape_turtle_string(name["given_name"])}" ;'
+        )
+    if name["family_name"]:
+        lines.append(
+            f'    foaf:familyName     "{escape_turtle_string(name["family_name"])}" ;'
+        )
+    if name["given_name"] or name["family_name"]:
+        lines.append(
+            f'    fg:nameSource       "{escape_turtle_string(name["name_source"])}" ;'
+        )
+
+    lines.extend([
         f'    fg:facultyId        "{escape_turtle_string(faculty_id)}" ;',
         f'    fg:department       "{escape_turtle_string(faculty["department"])}" ;',
-    ]
+    ])
 
     if department_uri:
         lines.append(f"    org:memberOf        {department_uri} ;")
